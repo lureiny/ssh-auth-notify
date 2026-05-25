@@ -26,6 +26,7 @@ INSTALL_TG_TOKEN=""
 INSTALL_TG_CHAT_ID=""
 INSTALL_TIMEOUT="5"
 INSTALL_NODE_NAME=""
+INSTALL_NODE_NAME_SET="0"
 INSTALL_SEND_MACHINE_ADDR="0"
 INSTALL_SEND_MACHINE_ADDR_SET="0"
 INSTALL_MACHINE_ADDR=""
@@ -279,7 +280,7 @@ update_config_key() {
 }
 
 update_config_install_options() {
-  if [[ -n "${INSTALL_NODE_NAME}" ]]; then
+  if [[ "${INSTALL_NODE_NAME_SET}" -eq 1 ]]; then
     update_config_key "SSH_AUTH_NOTIFY_HOST_ALIAS" "${INSTALL_NODE_NAME}"
     log "updated node name in config: ${CONFIG_FILE}"
   fi
@@ -287,6 +288,22 @@ update_config_install_options() {
     update_config_key "SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR" "${INSTALL_SEND_MACHINE_ADDR}"
     update_config_key "SSH_AUTH_NOTIFY_MACHINE_ADDR" "${INSTALL_MACHINE_ADDR}"
     log "updated machine address options in config: ${CONFIG_FILE}"
+  fi
+}
+
+load_existing_install_options() {
+  [[ -f "${CONFIG_FILE}" ]] || return 0
+
+  local SSH_AUTH_NOTIFY_HOST_ALIAS="" SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR="" SSH_AUTH_NOTIFY_MACHINE_ADDR=""
+  # shellcheck source=/dev/null
+  source "${CONFIG_FILE}"
+
+  if [[ "${INSTALL_NODE_NAME_SET}" -eq 0 ]]; then
+    INSTALL_NODE_NAME="${SSH_AUTH_NOTIFY_HOST_ALIAS:-}"
+  fi
+  if [[ "${INSTALL_SEND_MACHINE_ADDR_SET}" -eq 0 ]]; then
+    INSTALL_SEND_MACHINE_ADDR="${SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR:-0}"
+    INSTALL_MACHINE_ADDR="${SSH_AUTH_NOTIFY_MACHINE_ADDR:-}"
   fi
 }
 
@@ -496,7 +513,7 @@ parse_common_config_args() {
       --telegram-bot-token) INSTALL_TG_TOKEN="${2:-}"; shift 2 ;;
       --telegram-chat-id) INSTALL_TG_CHAT_ID="${2:-}"; shift 2 ;;
       --timeout) INSTALL_TIMEOUT="${2:-5}"; shift 2 ;;
-      --node-name|--host-alias) INSTALL_NODE_NAME="${2:-}"; shift 2 ;;
+      --node-name|--host-alias) INSTALL_NODE_NAME="${2:-}"; INSTALL_NODE_NAME_SET="1"; shift 2 ;;
       --send-machine-address) INSTALL_SEND_MACHINE_ADDR="1"; INSTALL_SEND_MACHINE_ADDR_SET="1"; shift ;;
       --no-send-machine-address) INSTALL_SEND_MACHINE_ADDR="0"; INSTALL_SEND_MACHINE_ADDR_SET="1"; shift ;;
       --machine-address|--machine-host) INSTALL_MACHINE_ADDR="${2:-}"; INSTALL_SEND_MACHINE_ADDR="1"; INSTALL_SEND_MACHINE_ADDR_SET="1"; shift 2 ;;
@@ -573,26 +590,129 @@ prompt_backends_interactive() {
   printf "%s" "${result:-telegram}"
 }
 
+load_configure_values() {
+  CFG_BACKENDS="telegram"
+  CFG_TG_TOKEN=""
+  CFG_TG_CHAT_ID=""
+  CFG_BARK_URL=""
+  CFG_TIMEOUT="5"
+  CFG_NODE_NAME=""
+  CFG_SEND_MACHINE_ADDR="0"
+  CFG_MACHINE_ADDR=""
+
+  [[ -f "${CONFIG_FILE}" ]] || return 0
+
+  local SSH_AUTH_NOTIFY_BACKENDS="" SSH_AUTH_NOTIFY_BACKEND="" TELEGRAM_BOT_TOKEN="" TELEGRAM_CHAT_ID="" BARK_URL=""
+  local SSH_AUTH_NOTIFY_TIMEOUT="" SSH_AUTH_NOTIFY_HOST_ALIAS="" SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR="" SSH_AUTH_NOTIFY_MACHINE_ADDR=""
+  # shellcheck source=/dev/null
+  source "${CONFIG_FILE}"
+
+  CFG_BACKENDS="${SSH_AUTH_NOTIFY_BACKENDS:-${SSH_AUTH_NOTIFY_BACKEND:-telegram}}"
+  CFG_TG_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
+  CFG_TG_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
+  CFG_BARK_URL="${BARK_URL:-}"
+  CFG_TIMEOUT="${SSH_AUTH_NOTIFY_TIMEOUT:-5}"
+  CFG_NODE_NAME="${SSH_AUTH_NOTIFY_HOST_ALIAS:-}"
+  CFG_SEND_MACHINE_ADDR="${SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR:-0}"
+  CFG_MACHINE_ADDR="${SSH_AUTH_NOTIFY_MACHINE_ADDR:-}"
+}
+
+save_configure_values() {
+  validate_backend_config "${CFG_BACKENDS}" "${CFG_TG_TOKEN}" "${CFG_TG_CHAT_ID}" "${CFG_BARK_URL}"
+  write_config_file "${CFG_BACKENDS}" "${CFG_TG_TOKEN}" "${CFG_TG_CHAT_ID}" "${CFG_BARK_URL}" "${CFG_TIMEOUT}" "${CFG_NODE_NAME}" "${CFG_SEND_MACHINE_ADDR}" "${CFG_MACHINE_ADDR}"
+  log "updated config: ${CONFIG_FILE}"
+}
+
+configure_channels_interactive() {
+  local backends token_answer chat_answer bark_answer
+  printf 'Current channels: %s\n' "${CFG_BACKENDS}"
+  backends="$(prompt_backends_interactive)" || fatal "channel selection cancelled"
+
+  if backend_list_contains "${backends}" "telegram"; then
+    read -r -p "Telegram bot token [keep existing]: " token_answer
+    [[ -n "${token_answer}" ]] && CFG_TG_TOKEN="${token_answer}"
+    read -r -p "Telegram chat id [keep existing]: " chat_answer
+    [[ -n "${chat_answer}" ]] && CFG_TG_CHAT_ID="${chat_answer}"
+  fi
+  if backend_list_contains "${backends}" "bark"; then
+    read -r -p "Bark URL [keep existing]: " bark_answer
+    [[ -n "${bark_answer}" ]] && CFG_BARK_URL="${bark_answer}"
+  fi
+
+  CFG_BACKENDS="${backends}"
+  save_configure_values
+}
+
+configure_node_interactive() {
+  local answer current
+  current="${CFG_NODE_NAME:-empty uses hostname}"
+  read -r -p "Node name [current: ${current}; '-' clears]: " answer
+  case "${answer}" in
+    "") log "node name unchanged" ;;
+    -) CFG_NODE_NAME=""; save_configure_values ;;
+    *) CFG_NODE_NAME="${answer}"; save_configure_values ;;
+  esac
+}
+
+configure_machine_addr_interactive() {
+  local enable_answer addr_answer current_addr
+  if [[ "${CFG_SEND_MACHINE_ADDR}" == "1" ]]; then
+    read -r -p "Send machine address? [Y/n]: " enable_answer
+  else
+    read -r -p "Send machine address? [y/N]: " enable_answer
+  fi
+
+  case "${enable_answer}" in
+    y|Y|yes|YES) CFG_SEND_MACHINE_ADDR="1" ;;
+    n|N|no|NO) CFG_SEND_MACHINE_ADDR="0" ;;
+    "") ;;
+    *) warn "invalid choice; keeping current setting" ;;
+  esac
+
+  if [[ "${CFG_SEND_MACHINE_ADDR}" == "1" ]]; then
+    current_addr="${CFG_MACHINE_ADDR:-empty fetches ifconfig.me}"
+    read -r -p "Machine address [current: ${current_addr}; '-' clears to fetch ifconfig.me]: " addr_answer
+    case "${addr_answer}" in
+      "") ;;
+      -) CFG_MACHINE_ADDR="" ;;
+      *) CFG_MACHINE_ADDR="${addr_answer}" ;;
+    esac
+  else
+    CFG_MACHINE_ADDR=""
+  fi
+
+  save_configure_values
+}
+
 configure_interactive() {
   need_root
   install -d -m 0700 "${CONFIG_DIR}"
+  load_configure_values
 
-  local backends token chat_id bark_url
-  backends="$(prompt_backends_interactive)" || fatal "channel selection cancelled"
-  # selected via checklist or fallback prompt
+  local choice node_summary machine_summary
+  while true; do
+    node_summary="${CFG_NODE_NAME:-hostname fallback}"
+    if [[ "${CFG_SEND_MACHINE_ADDR}" == "1" ]]; then
+      machine_summary="enabled (${CFG_MACHINE_ADDR:-fetch ifconfig.me})"
+    else
+      machine_summary="disabled"
+    fi
 
-  if backend_list_contains "${backends}" "telegram"; then
-    read -r -p "Telegram bot token: " token
-    read -r -p "Telegram chat id: " chat_id
-  fi
-  if backend_list_contains "${backends}" "bark"; then
-    read -r -p "Bark URL, e.g. https://api.day.app/KEY: " bark_url
-  fi
+    printf '\nConfigure %s\n' "${PROJECT_NAME}"
+    printf '  1) Channels and credentials: %s\n' "${CFG_BACKENDS}"
+    printf '  2) Node name: %s\n' "${node_summary}"
+    printf '  3) Machine address: %s\n' "${machine_summary}"
+    printf '  0) Exit\n'
+    read -r -p "Select item to modify: " choice
 
-  validate_backend_config "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}"
-  write_config_file "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}" "5" "${INSTALL_NODE_NAME}" "${INSTALL_SEND_MACHINE_ADDR}" "${INSTALL_MACHINE_ADDR}"
-
-  log "updated config: ${CONFIG_FILE}"
+    case "${choice}" in
+      1) configure_channels_interactive ;;
+      2) configure_node_interactive ;;
+      3) configure_machine_addr_interactive ;;
+      0|q|Q|exit) break ;;
+      *) warn "unknown menu item: ${choice}" ;;
+    esac
+  done
 }
 
 parse_test_args() {
@@ -672,6 +792,29 @@ cmd_update() {
   need_root
   install_scripts
   log "update complete"
+}
+
+cmd_configure() {
+  parse_common_config_args "$@"
+  need_root
+  install -d -m 0700 "${CONFIG_DIR}"
+
+  if [[ -n "${INSTALL_BACKENDS}" ]]; then
+    load_existing_install_options
+    validate_backend_config "${INSTALL_BACKENDS}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}"
+    write_config_file "${INSTALL_BACKENDS}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}" "${INSTALL_TIMEOUT}" "${INSTALL_NODE_NAME}" "${INSTALL_SEND_MACHINE_ADDR}" "${INSTALL_MACHINE_ADDR}"
+    log "updated config: ${CONFIG_FILE}"
+    return 0
+  fi
+
+  if [[ "${INSTALL_NODE_NAME_SET}" -eq 1 || "${INSTALL_SEND_MACHINE_ADDR_SET}" -eq 1 ]]; then
+    [[ -f "${CONFIG_FILE}" ]] || fatal "config not found: ${CONFIG_FILE}"
+    update_config_install_options
+    log "updated config: ${CONFIG_FILE}"
+    return 0
+  fi
+
+  configure_interactive
 }
 
 cmd_reinstall() {
@@ -763,7 +906,7 @@ Usage:
   $0 install [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS] [--node-name NAME] [--send-machine-address|--no-send-machine-address] [--machine-address ADDR_OR_HOST]
   $0 update
   $0 reinstall [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS] [--node-name NAME] [--send-machine-address|--no-send-machine-address] [--machine-address ADDR_OR_HOST]
-  $0 configure
+  $0 configure [--node-name NAME] [--send-machine-address|--no-send-machine-address] [--machine-address ADDR_OR_HOST]
   $0 test [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--user USER] [--rhost IP] [--tty TTY]
   $0 status
   $0 uninstall [--purge-backups]
@@ -778,7 +921,7 @@ main() {
     install) cmd_install "$@" ;;
     update) cmd_update "$@" ;;
     reinstall) cmd_reinstall "$@" ;;
-    configure) configure_interactive "$@" ;;
+    configure) cmd_configure "$@" ;;
     test) cmd_test "$@" ;;
     status) cmd_status "$@" ;;
     uninstall) cmd_uninstall "$@" ;;

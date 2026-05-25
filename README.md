@@ -26,10 +26,17 @@ Run directly from the GitHub raw URL. No clone is required.
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-If no complete config exists, install opens a channel checklist when `whiptail` or `dialog` is available, then asks for the required credentials. On minimal systems it falls back to a numbered text prompt. Existing complete config is preserved. Pass `--node-name NAME` during install or reinstall to set the display name used in notifications; when omitted, the worker falls back to the machine hostname. Machine address display is disabled by default; enable it with `--send-machine-address`, disable it with `--no-send-machine-address`, or pass `--machine-address ADDR_OR_HOST` to enable it with a fixed IPv4/domain. If enabled without a fixed value, the worker fetches the external IPv4 from `ifconfig.me`. Reconfigure only the notification config with:
+If no complete config exists, install opens a channel checklist when `whiptail` or `dialog` is available, then asks for the required credentials. On minimal systems it falls back to a numbered text prompt. Existing complete config is preserved. Pass `--node-name NAME` during install or reinstall to set the display name used in notifications; when omitted, the worker falls back to the machine hostname. Machine address display is disabled by default; enable it with `--send-machine-address`, disable it with `--no-send-machine-address`, or pass `--machine-address ADDR_OR_HOST` to enable it with a fixed IPv4/domain. If enabled without a fixed value, the worker fetches the external IPv4 from `ifconfig.me`. Reconfigure from an interactive menu. After changing one item, the menu is shown again so you can continue editing channels, node name, or machine address options:
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure
+```
+
+
+You can also update only the display options non-interactively when a config already exists:
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure --node-name prod-api-01 --machine-address ssh.example.com
 ```
 
 Non-interactive install example:

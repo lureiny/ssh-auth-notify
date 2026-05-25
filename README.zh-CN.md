@@ -26,10 +26,17 @@ PAM account
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-如果已有配置不存在或不完整，安装过程会优先使用 `whiptail` 或 `dialog` 显示 channel checklist，然后询问对应凭据；极简系统会回退到编号文本选择。已有完整配置会保留。安装或重新安装时可以传入 `--node-name NAME` 设置通知里展示的节点名称；未指定时 worker 会回落到机器 hostname。机器地址默认不展示；用 `--send-machine-address` 开启，用 `--no-send-machine-address` 关闭，或用 `--machine-address ADDR_OR_HOST` 指定固定 IPv4/域名并自动开启。开启后如果没有固定值，worker 会从 `ifconfig.me` 获取外部 IPv4。只重新配置通知参数：
+如果已有配置不存在或不完整，安装过程会优先使用 `whiptail` 或 `dialog` 显示 channel checklist，然后询问对应凭据；极简系统会回退到编号文本选择。已有完整配置会保留。安装或重新安装时可以传入 `--node-name NAME` 设置通知里展示的节点名称；未指定时 worker 会回落到机器 hostname。机器地址默认不展示；用 `--send-machine-address` 开启，用 `--no-send-machine-address` 关闭，或用 `--machine-address ADDR_OR_HOST` 指定固定 IPv4/域名并自动开启。开启后如果没有固定值，worker 会从 `ifconfig.me` 获取外部 IPv4。通过交互菜单重新配置。每次修改一项后会回到菜单，可以继续修改 channel、节点名称或机器地址选项：
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure
+```
+
+
+已有配置时，也可以用参数非交互更新这些展示选项：
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure --node-name prod-api-01 --machine-address ssh.example.com
 ```
 
 非交互安装：
