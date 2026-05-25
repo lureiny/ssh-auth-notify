@@ -106,6 +106,35 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 
 `SSH_AUTH_NOTIFY_ONLY_USERS` 非空时只通知这些逗号分隔用户。`SSH_AUTH_NOTIFY_SKIP_USERS` 命中时跳过通知。
 
+## Channel 模块
+
+发送后端按 channel 模块解耦，内置模块位于：
+
+```text
+scripts/channels/telegram.sh
+scripts/channels/bark.sh
+```
+
+新增 channel 时添加 `scripts/channels/<name>.sh`，`<name>` 必须匹配 `^[a-z][a-z0-9_]*$`，并实现这三个函数：
+
+```bash
+<name>_required_vars()
+<name>_validate()
+<name>_send "$title" "$body"
+```
+
+主发送器会通过 `channel_resolve` 返回这组函数名，然后依次执行 validate 和 send。模块可使用主发送器提供的 helper：
+
+```bash
+require_vars VAR1 VAR2
+notify_timeout
+urlencode "text"
+log_debug "message"
+```
+
+例如新增 `ntfy` 时，实现 `ntfy_required_vars`、`ntfy_validate`、`ntfy_send`，然后配置 `SSH_AUTH_NOTIFY_BACKENDS=telegram,ntfy` 即可触发。安装会把 `CHANNEL_FILES` 清单里的所有内置 channel 文件一次性安装到 `/opt/ssh-auth-notify/scripts/channels/`，重复安装会覆盖脚本文件但不会重复插入 PAM block，也不会覆盖已有完整配置。新增内置 channel 时，把 `scripts/channels/ntfy.sh` 加入 `ssh-auth-notify-manager.sh` 的 `CHANNEL_FILES` 清单即可支持本地安装和 URL 安装。
+
+
 ## 非持久化测试
 
 测试模式不会写入 `/opt/ssh-auth-notify`，不会写入 `/etc/ssh-auth-notify`，不会修改 `/etc/pam.d/sshd`。
@@ -142,7 +171,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-no
 一条命令执行基础检查：
 
 ```bash
-bash -c 'set -e; files="ssh-auth-notify-manager.sh scripts/ssh-auth-notify-wrapper scripts/ssh-auth-notify-worker scripts/ssh-auth-notify-send"; for f in $files; do bash -n "$f"; done; if command -v shellcheck >/dev/null 2>&1; then shellcheck $files; else echo "shellcheck not found; skipped"; fi'
+bash -c 'set -e; files="ssh-auth-notify-manager.sh scripts/ssh-auth-notify-wrapper scripts/ssh-auth-notify-worker scripts/ssh-auth-notify-send scripts/channels/telegram.sh scripts/channels/bark.sh"; for f in $files; do bash -n "$f"; done; if command -v shellcheck >/dev/null 2>&1; then shellcheck $files; else echo "shellcheck not found; skipped"; fi'
 ```
 
 ```bash
@@ -150,5 +179,7 @@ bash -n ssh-auth-notify-manager.sh
 bash -n scripts/ssh-auth-notify-wrapper
 bash -n scripts/ssh-auth-notify-worker
 bash -n scripts/ssh-auth-notify-send
-command -v shellcheck >/dev/null && shellcheck ssh-auth-notify-manager.sh scripts/ssh-auth-notify-wrapper scripts/ssh-auth-notify-worker scripts/ssh-auth-notify-send
+bash -n scripts/channels/telegram.sh
+bash -n scripts/channels/bark.sh
+command -v shellcheck >/dev/null && shellcheck ssh-auth-notify-manager.sh scripts/ssh-auth-notify-wrapper scripts/ssh-auth-notify-worker scripts/ssh-auth-notify-send scripts/channels/telegram.sh scripts/channels/bark.sh
 ```

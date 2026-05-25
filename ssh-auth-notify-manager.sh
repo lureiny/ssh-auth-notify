@@ -18,6 +18,7 @@ SCRIPT_SOURCE="${BASH_SOURCE[0]:-${0:-.}}"
 SELF_DIR="$(cd -- "$(dirname -- "${SCRIPT_SOURCE}")" 2>/dev/null && pwd || pwd)"
 SRC_SCRIPT_DIR="${SELF_DIR}/scripts"
 REMOTE_BASE_URL="${SSH_AUTH_NOTIFY_BASE_URL:-https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main}"
+CHANNEL_FILES=(telegram.sh bark.sh)
 
 INSTALL_BACKENDS=""
 INSTALL_BARK_URL=""
@@ -128,9 +129,14 @@ check_test_dependencies() {
 }
 
 local_scripts_available() {
+  local channel_file
   [[ -x "${SRC_SCRIPT_DIR}/ssh-auth-notify-wrapper" \
     && -x "${SRC_SCRIPT_DIR}/ssh-auth-notify-worker" \
-    && -x "${SRC_SCRIPT_DIR}/ssh-auth-notify-send" ]]
+    && -x "${SRC_SCRIPT_DIR}/ssh-auth-notify-send" ]] || return 1
+
+  for channel_file in "${CHANNEL_FILES[@]}"; do
+    [[ -r "${SRC_SCRIPT_DIR}/channels/${channel_file}" ]] || return 1
+  done
 }
 
 download_project_script() {
@@ -143,14 +149,18 @@ download_project_script() {
 }
 
 install_or_download_scripts() {
-  local dest_dir="${1:-}"
+  local dest_dir="${1:-}" channel_file
   [[ -n "${dest_dir}" ]] || fatal "destination script directory is required"
   install -d -m 0755 "${dest_dir}"
+  install -d -m 0755 "${dest_dir}/channels"
 
   if local_scripts_available; then
     install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-wrapper" "${dest_dir}/ssh-auth-notify-wrapper"
     install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-worker" "${dest_dir}/ssh-auth-notify-worker"
     install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-send" "${dest_dir}/ssh-auth-notify-send"
+    for channel_file in "${CHANNEL_FILES[@]}"; do
+      install -m 0755 "${SRC_SCRIPT_DIR}/channels/${channel_file}" "${dest_dir}/channels/${channel_file}"
+    done
     return 0
   fi
 
@@ -158,6 +168,9 @@ install_or_download_scripts() {
   download_project_script "ssh-auth-notify-wrapper" "${dest_dir}/ssh-auth-notify-wrapper"
   download_project_script "ssh-auth-notify-worker" "${dest_dir}/ssh-auth-notify-worker"
   download_project_script "ssh-auth-notify-send" "${dest_dir}/ssh-auth-notify-send"
+  for channel_file in "${CHANNEL_FILES[@]}"; do
+    download_project_script "channels/${channel_file}" "${dest_dir}/channels/${channel_file}"
+  done
 }
 
 primary_backend() {
