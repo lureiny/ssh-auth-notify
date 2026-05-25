@@ -50,15 +50,42 @@ ${BODY}" \
     --data "disable_web_page_preview=true" >/dev/null
 }
 
+send_backend() {
+  local backend="${1:-}"
+  case "${backend}" in
+    bark) send_bark ;;
+    telegram) send_telegram ;;
+    *) printf '[ssh-auth-notify-send] unsupported backend: %s\n' "${backend:-empty}" >&2; return 1 ;;
+  esac
+}
+
 main() {
   [[ -n "${TITLE}" ]] || TITLE="SSH login"
   [[ -n "${BODY}" ]] || BODY="empty body"
 
-  case "${SSH_AUTH_NOTIFY_BACKEND:-}" in
-    bark) send_bark ;;
-    telegram) send_telegram ;;
-    *) printf '[ssh-auth-notify-send] unsupported backend: %s\n' "${SSH_AUTH_NOTIFY_BACKEND:-empty}" >&2; exit 1 ;;
-  esac
+  local backends old_ifs backend failures=0 sent=0
+  backends="${SSH_AUTH_NOTIFY_BACKENDS:-${SSH_AUTH_NOTIFY_BACKEND:-}}"
+  [[ -n "${backends}" ]] || { printf '[ssh-auth-notify-send] unsupported backend: empty\n' >&2; exit 1; }
+
+  old_ifs="${IFS}"
+  IFS=',' read -r -a backend_items <<<"${backends}"
+  IFS="${old_ifs}"
+
+  for backend in "${backend_items[@]}"; do
+    backend="${backend//[[:space:]]/}"
+    [[ -n "${backend}" ]] || continue
+    if send_backend "${backend}"; then
+      sent=1
+      log_debug "sent via ${backend}"
+    else
+      failures=$((failures + 1))
+      log_debug "send failed via ${backend}"
+    fi
+  done
+
+  [[ "${sent}" -eq 1 ]] && return 0
+  [[ "${failures}" -gt 0 ]] && return 1
+  return 1
 }
 
 main "$@"

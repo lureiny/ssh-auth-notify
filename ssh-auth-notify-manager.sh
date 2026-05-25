@@ -17,7 +17,7 @@ SSHD_DROPIN="${SSHD_CONFIG_DIR}/99-ssh-auth-notify.conf"
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SRC_SCRIPT_DIR="${SELF_DIR}/scripts"
 
-INSTALL_BACKEND=""
+INSTALL_BACKENDS=""
 INSTALL_BARK_URL=""
 INSTALL_TG_TOKEN=""
 INSTALL_TG_CHAT_ID=""
@@ -116,13 +116,60 @@ check_dependencies() {
   ((${#still_missing[@]} == 0)) || fatal "dependencies still missing: ${still_missing[*]}"
 }
 
+primary_backend() {
+  local backends="${1:-telegram}" first
+  first="${backends%%,*}"
+  first="${first//[[:space:]]/}"
+  printf '%s' "${first}"
+}
+
+backend_list_contains() {
+  local backends="${1:-}" needle="${2:-}" old_ifs item
+  [[ -n "${backends}" && -n "${needle}" ]] || return 1
+  old_ifs="${IFS}"
+  IFS=',' read -r -a items <<<"${backends}"
+  IFS="${old_ifs}"
+  for item in "${items[@]}"; do
+    item="${item//[[:space:]]/}"
+    [[ "${item}" == "${needle}" ]] && return 0
+  done
+  return 1
+}
+
+validate_backend_config() {
+  local backends="${1:-}" old_ifs item seen=0
+  [[ -n "${backends}" ]] || fatal "backend is required"
+  old_ifs="${IFS}"
+  IFS=',' read -r -a items <<<"${backends}"
+  IFS="${old_ifs}"
+
+  for item in "${items[@]}"; do
+    item="${item//[[:space:]]/}"
+    [[ -n "${item}" ]] || continue
+    seen=1
+    case "${item}" in
+      telegram)
+        [[ -n "${2:-}" ]] || fatal "telegram bot token is required"
+        [[ -n "${3:-}" ]] || fatal "telegram chat id is required"
+        ;;
+      bark)
+        [[ -n "${4:-}" ]] || fatal "bark url is required"
+        ;;
+      *) fatal "unsupported backend: ${item}" ;;
+    esac
+  done
+  [[ "${seen}" -eq 1 ]] || fatal "backend is required"
+}
+
 write_config_file() {
-  local backend="${1:-telegram}" tg_token="${2:-}" tg_chat_id="${3:-}" bark_url="${4:-}" timeout="${5:-5}"
+  local backends="${1:-telegram}" tg_token="${2:-}" tg_chat_id="${3:-}" bark_url="${4:-}" timeout="${5:-5}"
   install -d -m 0700 "${CONFIG_DIR}"
   umask 077
   {
-    printf '# telegram | bark\n'
-    printf 'SSH_AUTH_NOTIFY_BACKEND=%q\n' "${backend}"
+    printf '# comma-separated: telegram,bark\n'
+    printf 'SSH_AUTH_NOTIFY_BACKENDS=%q\n' "${backends}"
+    printf '# Deprecated compatibility field; first backend from SSH_AUTH_NOTIFY_BACKENDS.\n'
+    printf 'SSH_AUTH_NOTIFY_BACKEND=%q\n' "$(primary_backend "${backends}")"
     printf '\n# Telegram\n'
     printf 'TELEGRAM_BOT_TOKEN=%q\n' "${tg_token}"
     printf 'TELEGRAM_CHAT_ID=%q\n' "${tg_chat_id}"
@@ -141,22 +188,34 @@ write_config_file() {
 config_is_complete() {
   [[ -f "${CONFIG_FILE}" ]] || return 1
 
-  local SSH_AUTH_NOTIFY_BACKEND="" TELEGRAM_BOT_TOKEN="" TELEGRAM_CHAT_ID="" BARK_URL=""
+  local SSH_AUTH_NOTIFY_BACKENDS="" SSH_AUTH_NOTIFY_BACKEND="" TELEGRAM_BOT_TOKEN="" TELEGRAM_CHAT_ID="" BARK_URL=""
+  local old_ifs item seen=0
   # shellcheck source=/dev/null
   source "${CONFIG_FILE}"
+  SSH_AUTH_NOTIFY_BACKENDS="${SSH_AUTH_NOTIFY_BACKENDS:-${SSH_AUTH_NOTIFY_BACKEND:-}}"
+  [[ -n "${SSH_AUTH_NOTIFY_BACKENDS}" ]] || return 1
 
-  case "${SSH_AUTH_NOTIFY_BACKEND}" in
-    telegram) [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]] ;;
-    bark) [[ -n "${BARK_URL}" ]] ;;
-    *) return 1 ;;
-  esac
+  old_ifs="${IFS}"
+  IFS=',' read -r -a items <<<"${SSH_AUTH_NOTIFY_BACKENDS}"
+  IFS="${old_ifs}"
+  for item in "${items[@]}"; do
+    item="${item//[[:space:]]/}"
+    [[ -n "${item}" ]] || continue
+    seen=1
+    case "${item}" in
+      telegram) [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]] || return 1 ;;
+      bark) [[ -n "${BARK_URL}" ]] || return 1 ;;
+      *) return 1 ;;
+    esac
+  done
+  [[ "${seen}" -eq 1 ]]
 }
 
 ensure_install_config() {
   install -d -m 0700 "${CONFIG_DIR}"
 
-  if [[ -n "${INSTALL_BACKEND}" ]]; then
-    write_config_file "${INSTALL_BACKEND}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}" "${INSTALL_TIMEOUT}"
+  if [[ -n "${INSTALL_BACKENDS}" ]]; then
+    write_config_file "${INSTALL_BACKENDS}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}" "${INSTALL_TIMEOUT}"
     log "wrote config: ${CONFIG_FILE}"
     return 0
   fi
@@ -174,7 +233,7 @@ ensure_install_config() {
   fi
 
   if [[ ! -t 0 ]]; then
-    fatal "configuration is required; rerun with --backend telegram|bark and credentials, or run interactively"
+    fatal "configuration is required; rerun with --backends telegram,bark and credentials, or run interactively"
   fi
 
   configure_interactive
@@ -268,37 +327,59 @@ install_sshd_use_pam() {
   if ! sshd_config_includes_dropins; then
     warn "${SSHD_CONFIG} does not appear to include ${SSHD_CONFIG_DIR}/*.conf; ${SSHD_DROPIN} may not take effect until Include is enabled manually"
   fi
-  warn "reload sshd after install so UsePAM yes takes effect, e.g. systemctl reload sshd || systemctl reload ssh"
+}
+
+find_sshd_binary() {
+  local candidate
+  for candidate in /usr/sbin/sshd /usr/local/sbin/sshd sshd; do
+    if command -v "${candidate}" >/dev/null 2>&1; then
+      command -v "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+validate_sshd_config() {
+  local sshd_bin
+  if sshd_bin="$(find_sshd_binary)"; then
+    "${sshd_bin}" -t -f "${SSHD_CONFIG}"
+  else
+    warn "sshd binary not found; skipping sshd_config validation before reload"
+    return 0
+  fi
+}
+
+reload_sshd() {
+  if ! validate_sshd_config; then
+    warn "sshd_config validation failed; sshd was not reloaded"
+    return 0
+  fi
+
+  if have_cmd systemctl; then
+    if systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null; then
+      log "reloaded sshd"
+      return 0
+    fi
+  fi
+
+  warn "could not reload sshd automatically; run: systemctl reload sshd || systemctl reload ssh"
+  return 0
 }
 
 remove_sshd_use_pam_block() {
   if sshd_dropin_present; then
     rm -f -- "${SSHD_DROPIN}"
     log "removed sshd_config drop-in: ${SSHD_DROPIN}"
-    warn "reload sshd after uninstall if you need the restored UsePAM setting to take effect"
   else
     log "sshd_config drop-in not present: ${SSHD_DROPIN}"
   fi
 }
 
-validate_backend_config() {
-  local backend="${1:-}"
-  case "${backend}" in
-    telegram)
-      [[ -n "${2:-}" ]] || fatal "telegram bot token is required"
-      [[ -n "${3:-}" ]] || fatal "telegram chat id is required"
-      ;;
-    bark)
-      [[ -n "${4:-}" ]] || fatal "bark url is required"
-      ;;
-    *) fatal "unsupported backend: ${backend}" ;;
-  esac
-}
-
 parse_common_config_args() {
   while (($#)); do
     case "$1" in
-      --backend) INSTALL_BACKEND="${2:-}"; shift 2 ;;
+      --backend|--backends) INSTALL_BACKENDS="${2:-}"; shift 2 ;;
       --bark-url) INSTALL_BARK_URL="${2:-}"; shift 2 ;;
       --telegram-bot-token) INSTALL_TG_TOKEN="${2:-}"; shift 2 ;;
       --telegram-chat-id) INSTALL_TG_CHAT_ID="${2:-}"; shift 2 ;;
@@ -312,28 +393,26 @@ configure_interactive() {
   need_root
   install -d -m 0700 "${CONFIG_DIR}"
 
-  local backend token chat_id bark_url
-  read -r -p "Backend [telegram/bark]: " backend
-  backend="${backend:-telegram}"
+  local backends token chat_id bark_url
+  read -r -p "Backends [telegram/bark/telegram,bark]: " backends
+  backends="${backends:-telegram}"
 
-  if [[ "${backend}" == "telegram" ]]; then
+  if backend_list_contains "${backends}" "telegram"; then
     read -r -p "Telegram bot token: " token
     read -r -p "Telegram chat id: " chat_id
-    validate_backend_config "${backend}" "${token}" "${chat_id}" ""
-    write_config_file "${backend}" "${token}" "${chat_id}" "" "5"
-  elif [[ "${backend}" == "bark" ]]; then
-    read -r -p "Bark URL, e.g. https://api.day.app/KEY: " bark_url
-    validate_backend_config "${backend}" "" "" "${bark_url}"
-    write_config_file "${backend}" "" "" "${bark_url}" "5"
-  else
-    fatal "unsupported backend: ${backend}"
   fi
+  if backend_list_contains "${backends}" "bark"; then
+    read -r -p "Bark URL, e.g. https://api.day.app/KEY: " bark_url
+  fi
+
+  validate_backend_config "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}"
+  write_config_file "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}" "5"
 
   log "updated config: ${CONFIG_FILE}"
 }
 
 parse_test_args() {
-  TEST_BACKEND=""
+  TEST_BACKENDS=""
   TEST_BARK_URL=""
   TEST_TG_TOKEN=""
   TEST_TG_CHAT_ID=""
@@ -343,7 +422,7 @@ parse_test_args() {
 
   while (($#)); do
     case "$1" in
-      --backend) TEST_BACKEND="${2:-}"; shift 2 ;;
+      --backend|--backends) TEST_BACKENDS="${2:-}"; shift 2 ;;
       --bark-url) TEST_BARK_URL="${2:-}"; shift 2 ;;
       --telegram-bot-token) TEST_TG_TOKEN="${2:-}"; shift 2 ;;
       --telegram-chat-id) TEST_TG_CHAT_ID="${2:-}"; shift 2 ;;
@@ -358,16 +437,17 @@ parse_test_args() {
 cmd_test() {
   parse_test_args "$@"
 
-  [[ -n "${TEST_BACKEND}" ]] || read -r -p "Backend [telegram/bark]: " TEST_BACKEND
-  TEST_BACKEND="${TEST_BACKEND:-telegram}"
+  [[ -n "${TEST_BACKENDS}" ]] || read -r -p "Backends [telegram/bark/telegram,bark]: " TEST_BACKENDS
+  TEST_BACKENDS="${TEST_BACKENDS:-telegram}"
 
-  if [[ "${TEST_BACKEND}" == "telegram" ]]; then
+  if backend_list_contains "${TEST_BACKENDS}" "telegram"; then
     [[ -n "${TEST_TG_TOKEN}" ]] || read -r -p "Telegram bot token: " TEST_TG_TOKEN
     [[ -n "${TEST_TG_CHAT_ID}" ]] || read -r -p "Telegram chat id: " TEST_TG_CHAT_ID
-  elif [[ "${TEST_BACKEND}" == "bark" ]]; then
+  fi
+  if backend_list_contains "${TEST_BACKENDS}" "bark"; then
     [[ -n "${TEST_BARK_URL}" ]] || read -r -p "Bark URL: " TEST_BARK_URL
   fi
-  validate_backend_config "${TEST_BACKEND}" "${TEST_TG_TOKEN}" "${TEST_TG_CHAT_ID}" "${TEST_BARK_URL}"
+  validate_backend_config "${TEST_BACKENDS}" "${TEST_TG_TOKEN}" "${TEST_TG_CHAT_ID}" "${TEST_BARK_URL}"
 
   local tmpconf
   TEST_TMPDIR="$(mktemp -d)"
@@ -376,7 +456,8 @@ cmd_test() {
 
   umask 077
   {
-    printf 'SSH_AUTH_NOTIFY_BACKEND=%q\n' "${TEST_BACKEND}"
+    printf 'SSH_AUTH_NOTIFY_BACKENDS=%q\n' "${TEST_BACKENDS}"
+    printf 'SSH_AUTH_NOTIFY_BACKEND=%q\n' "$(primary_backend "${TEST_BACKENDS}")"
     printf 'TELEGRAM_BOT_TOKEN=%q\n' "${TEST_TG_TOKEN}"
     printf 'TELEGRAM_CHAT_ID=%q\n' "${TEST_TG_CHAT_ID}"
     printf 'BARK_URL=%q\n' "${TEST_BARK_URL}"
@@ -401,8 +482,8 @@ cmd_test() {
 
 cmd_install() {
   parse_common_config_args "$@"
-  if [[ -n "${INSTALL_BACKEND}" ]]; then
-    validate_backend_config "${INSTALL_BACKEND}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}"
+  if [[ -n "${INSTALL_BACKENDS}" ]]; then
+    validate_backend_config "${INSTALL_BACKENDS}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}"
   fi
   need_root
   check_dependencies
@@ -410,6 +491,7 @@ cmd_install() {
   ensure_install_config
   install_sshd_use_pam
   install_pam_block
+  reload_sshd
   log "install complete"
   log "edit ${CONFIG_FILE} or run: sudo $0 configure"
 }
@@ -424,6 +506,7 @@ cmd_uninstall() {
   done
   remove_pam_block
   remove_sshd_use_pam_block
+  reload_sshd
   rm -rf "${INSTALL_DIR}" "${CONFIG_DIR}"
   log "removed ${INSTALL_DIR} and ${CONFIG_DIR}"
   if [[ "${PURGE_BACKUPS}" -eq 1 ]]; then
@@ -458,9 +541,9 @@ cmd_status() {
 usage() {
   cat <<USAGE
 Usage:
-  $0 install [--backend telegram|bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS]
+  $0 install [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS]
   $0 configure
-  $0 test [--backend telegram|bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--user USER] [--rhost IP] [--tty TTY]
+  $0 test [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--user USER] [--rhost IP] [--tty TTY]
   $0 status
   $0 uninstall [--purge-backups]
 USAGE

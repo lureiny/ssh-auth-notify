@@ -34,18 +34,14 @@ sudo ./ssh-auth-notify-manager.sh configure
 
 ```bash
 sudo ./ssh-auth-notify-manager.sh install \
-  --backend telegram \
+  --backends telegram \
   --telegram-bot-token 'TOKEN' \
   --telegram-chat-id 'CHAT_ID'
 ```
 
-安装会检查依赖，安装脚本到 `/opt/ssh-auth-notify/scripts`，配置文件到 `/etc/ssh-auth-notify/env`，向 `/etc/pam.d/sshd` 插入带 marker 的 PAM block，并新增 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf` 写入 `UsePAM yes`。无参数安装会在配置缺失或不完整时进入交互配置；非交互环境请使用 `--backend ...` 参数。
+安装会检查依赖，安装脚本到 `/opt/ssh-auth-notify/scripts`，配置文件到 `/etc/ssh-auth-notify/env`，向 `/etc/pam.d/sshd` 插入带 marker 的 PAM block，并新增 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf` 写入 `UsePAM yes`。无参数安装会在配置缺失或不完整时进入交互配置；非交互环境请使用 `--backends ...` 参数。
 
-如果 `/etc/ssh/sshd_config` 没有启用 `Include /etc/ssh/sshd_config.d/*.conf`，这个 drop-in 不会生效；脚本只提示，不会自动修改已有 `sshd_config`。安装后 reload sshd：
-
-```bash
-sudo systemctl reload sshd || sudo systemctl reload ssh
-```
+如果 `/etc/ssh/sshd_config` 没有启用 `Include /etc/ssh/sshd_config.d/*.conf`，这个 drop-in 不会生效；脚本只提示，不会自动修改已有 `sshd_config`。安装脚本会在写入配置后自动校验并 reload sshd。如果 reload 失败，会打印警告和手动命令。
 
 ## 配置
 
@@ -58,6 +54,7 @@ sudoedit /etc/ssh-auth-notify/env
 Telegram 示例：
 
 ```bash
+SSH_AUTH_NOTIFY_BACKENDS=telegram
 SSH_AUTH_NOTIFY_BACKEND=telegram
 TELEGRAM_BOT_TOKEN=123456:abcdef
 TELEGRAM_CHAT_ID=123456789
@@ -71,6 +68,7 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 Bark 示例：
 
 ```bash
+SSH_AUTH_NOTIFY_BACKENDS=bark
 SSH_AUTH_NOTIFY_BACKEND=bark
 BARK_URL=https://api.day.app/your_key
 SSH_AUTH_NOTIFY_TIMEOUT=5
@@ -80,6 +78,23 @@ SSH_AUTH_NOTIFY_SKIP_USERS=
 SSH_AUTH_NOTIFY_ONLY_USERS=
 ```
 
+多后端示例：
+
+```bash
+SSH_AUTH_NOTIFY_BACKENDS=telegram,bark
+SSH_AUTH_NOTIFY_BACKEND=telegram
+TELEGRAM_BOT_TOKEN=123456:abcdef
+TELEGRAM_CHAT_ID=123456789
+BARK_URL=https://api.day.app/your_key
+SSH_AUTH_NOTIFY_TIMEOUT=5
+SSH_AUTH_NOTIFY_HOST_ALIAS=
+SSH_AUTH_NOTIFY_DEBUG=0
+SSH_AUTH_NOTIFY_SKIP_USERS=
+SSH_AUTH_NOTIFY_ONLY_USERS=
+```
+
+`SSH_AUTH_NOTIFY_BACKEND` 是兼容旧版本的字段；新配置优先使用 `SSH_AUTH_NOTIFY_BACKENDS`。
+
 `SSH_AUTH_NOTIFY_ONLY_USERS` 非空时只通知这些逗号分隔用户。`SSH_AUTH_NOTIFY_SKIP_USERS` 命中时跳过通知。
 
 ## 非持久化测试
@@ -88,7 +103,7 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 
 ```bash
 ./ssh-auth-notify-manager.sh test \
-  --backend telegram \
+  --backends telegram \
   --telegram-bot-token 'TOKEN' \
   --telegram-chat-id 'CHAT_ID' \
   --user demo \
@@ -97,7 +112,19 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 
 ```bash
 ./ssh-auth-notify-manager.sh test \
-  --backend bark \
+  --backends bark \
+  --bark-url 'https://api.day.app/KEY' \
+  --user demo \
+  --rhost 1.2.3.4
+```
+
+多后端：
+
+```bash
+./ssh-auth-notify-manager.sh test \
+  --backends telegram,bark \
+  --telegram-bot-token 'TOKEN' \
+  --telegram-chat-id 'CHAT_ID' \
   --bark-url 'https://api.day.app/KEY' \
   --user demo \
   --rhost 1.2.3.4
@@ -121,7 +148,7 @@ sudo ./ssh-auth-notify-manager.sh uninstall --purge-backups
 一条命令执行基础检查：
 
 ```bash
-bash -c 'set -e; bash -n ssh-auth-notify-manager.sh scripts/ssh-auth-notify-wrapper scripts/ssh-auth-notify-worker scripts/ssh-auth-notify-send; if command -v shellcheck >/dev/null 2>&1; then shellcheck ssh-auth-notify-manager.sh scripts/ssh-auth-notify-wrapper scripts/ssh-auth-notify-worker scripts/ssh-auth-notify-send; else echo "shellcheck not found; skipped"; fi'
+bash -c 'set -e; files="ssh-auth-notify-manager.sh scripts/ssh-auth-notify-wrapper scripts/ssh-auth-notify-worker scripts/ssh-auth-notify-send"; for f in $files; do bash -n "$f"; done; if command -v shellcheck >/dev/null 2>&1; then shellcheck $files; else echo "shellcheck not found; skipped"; fi'
 ```
 
 ```bash
