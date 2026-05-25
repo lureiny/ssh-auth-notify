@@ -135,15 +135,46 @@ write_config_file() {
   chmod 0600 "${CONFIG_FILE}"
 }
 
-write_default_config() {
+config_is_complete() {
+  [[ -f "${CONFIG_FILE}" ]] || return 1
+
+  local SSH_AUTH_NOTIFY_BACKEND="" TELEGRAM_BOT_TOKEN="" TELEGRAM_CHAT_ID="" BARK_URL=""
+  # shellcheck source=/dev/null
+  source "${CONFIG_FILE}"
+
+  case "${SSH_AUTH_NOTIFY_BACKEND}" in
+    telegram) [[ -n "${TELEGRAM_BOT_TOKEN}" && -n "${TELEGRAM_CHAT_ID}" ]] ;;
+    bark) [[ -n "${BARK_URL}" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+ensure_install_config() {
   install -d -m 0700 "${CONFIG_DIR}"
-  if [[ ! -f "${CONFIG_FILE}" ]]; then
-    write_config_file "${INSTALL_BACKEND:-telegram}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}" "${INSTALL_TIMEOUT}"
-    log "created config: ${CONFIG_FILE}"
-  else
-    chmod 0600 "${CONFIG_FILE}"
-    log "config already exists: ${CONFIG_FILE}"
+
+  if [[ -n "${INSTALL_BACKEND}" ]]; then
+    write_config_file "${INSTALL_BACKEND}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}" "${INSTALL_TIMEOUT}"
+    log "wrote config: ${CONFIG_FILE}"
+    return 0
   fi
+
+  if config_is_complete; then
+    chmod 0600 "${CONFIG_FILE}"
+    log "config already exists and looks complete: ${CONFIG_FILE}"
+    return 0
+  fi
+
+  if [[ -f "${CONFIG_FILE}" ]]; then
+    warn "config exists but is incomplete: ${CONFIG_FILE}"
+  else
+    log "no config found; starting interactive configuration"
+  fi
+
+  if [[ ! -t 0 ]]; then
+    fatal "configuration is required; rerun with --backend telegram|bark and credentials, or run interactively"
+  fi
+
+  configure_interactive
 }
 
 install_scripts() {
@@ -325,7 +356,7 @@ cmd_install() {
   need_root
   check_dependencies
   install_scripts
-  write_default_config
+  ensure_install_config
   install_pam_block
   log "install complete"
   log "edit ${CONFIG_FILE} or run: sudo $0 configure"

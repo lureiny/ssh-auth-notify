@@ -18,10 +18,15 @@ PAM account
 
 ## 安装
 
-交互配置：
+交互安装并配置：
 
 ```bash
 sudo ./ssh-auth-notify-manager.sh install
+```
+
+如果已有配置不存在或不完整，安装过程会提示选择 Telegram 或 Bark 并写入最小必要配置。已有完整配置会被保留；需要重新配置时执行：
+
+```bash
 sudo ./ssh-auth-notify-manager.sh configure
 ```
 
@@ -34,7 +39,7 @@ sudo ./ssh-auth-notify-manager.sh install \
   --telegram-chat-id 'CHAT_ID'
 ```
 
-安装会检查依赖，安装脚本到 `/opt/ssh-auth-notify/scripts`，配置文件到 `/etc/ssh-auth-notify/env`，并向 `/etc/pam.d/sshd` 插入带 marker 的 PAM block。
+安装会检查依赖，安装脚本到 `/opt/ssh-auth-notify/scripts`，配置文件到 `/etc/ssh-auth-notify/env`，并向 `/etc/pam.d/sshd` 插入带 marker 的 PAM block。无参数安装会在配置缺失或不完整时进入交互配置；非交互环境请使用 `--backend ...` 参数。
 
 ## 配置
 
