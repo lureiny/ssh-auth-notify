@@ -14,7 +14,7 @@ PAM account
 
 ## 风险提示
 
-安装会修改 `/etc/pam.d/sshd`。请先保持一个已有 root session，不要在验证前关闭当前 SSH 会话。安装脚本会自动备份 PAM 文件，但错误 PAM 配置仍可能影响后续 SSH 登录。
+安装会修改 `/etc/pam.d/sshd`，并新增 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf` 来设置 `UsePAM yes`。它不会改写已有 `/etc/ssh/sshd_config`。请先保持一个已有 root session，不要在验证前关闭当前 SSH 会话。安装脚本会自动备份 PAM 文件，但错误 SSH/PAM 配置仍可能影响后续 SSH 登录。
 
 ## 安装
 
@@ -39,7 +39,13 @@ sudo ./ssh-auth-notify-manager.sh install \
   --telegram-chat-id 'CHAT_ID'
 ```
 
-安装会检查依赖，安装脚本到 `/opt/ssh-auth-notify/scripts`，配置文件到 `/etc/ssh-auth-notify/env`，并向 `/etc/pam.d/sshd` 插入带 marker 的 PAM block。无参数安装会在配置缺失或不完整时进入交互配置；非交互环境请使用 `--backend ...` 参数。
+安装会检查依赖，安装脚本到 `/opt/ssh-auth-notify/scripts`，配置文件到 `/etc/ssh-auth-notify/env`，向 `/etc/pam.d/sshd` 插入带 marker 的 PAM block，并新增 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf` 写入 `UsePAM yes`。无参数安装会在配置缺失或不完整时进入交互配置；非交互环境请使用 `--backend ...` 参数。
+
+如果 `/etc/ssh/sshd_config` 没有启用 `Include /etc/ssh/sshd_config.d/*.conf`，这个 drop-in 不会生效；脚本只提示，不会自动修改已有 `sshd_config`。安装后 reload sshd：
+
+```bash
+sudo systemctl reload sshd || sudo systemctl reload ssh
+```
 
 ## 配置
 
@@ -104,7 +110,7 @@ sudo ./ssh-auth-notify-manager.sh status
 sudo ./ssh-auth-notify-manager.sh uninstall
 ```
 
-卸载会删除本项目 PAM marker block、`/opt/ssh-auth-notify` 和 `/etc/ssh-auth-notify`。默认保留 PAM 备份；如需删除本项目备份：
+卸载会删除本项目 PAM marker block、删除 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf`、删除 `/opt/ssh-auth-notify` 和 `/etc/ssh-auth-notify`。默认保留 PAM 备份；如需删除本项目备份：
 
 ```bash
 sudo ./ssh-auth-notify-manager.sh uninstall --purge-backups

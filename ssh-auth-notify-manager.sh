@@ -10,6 +10,9 @@ PAM_FILE="/etc/pam.d/sshd"
 PAM_BEGIN="# BEGIN ssh-auth-notify"
 PAM_END="# END ssh-auth-notify"
 PAM_LINE="account optional pam_exec.so quiet type=account ${SCRIPT_DIR}/ssh-auth-notify-wrapper"
+SSHD_CONFIG="/etc/ssh/sshd_config"
+SSHD_CONFIG_DIR="/etc/ssh/sshd_config.d"
+SSHD_DROPIN="${SSHD_CONFIG_DIR}/99-ssh-auth-notify.conf"
 
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 SRC_SCRIPT_DIR="${SELF_DIR}/scripts"
@@ -186,12 +189,18 @@ install_scripts() {
   log "installed scripts to ${SCRIPT_DIR}"
 }
 
-backup_pam() {
-  [[ -f "${PAM_FILE}" ]] || fatal "PAM file not found: ${PAM_FILE}"
-  local backup="${PAM_FILE}.bak.ssh-auth-notify.$(date +%Y%m%d-%H%M%S)"
-  cp -a "${PAM_FILE}" "${backup}"
-  log "backup PAM: ${backup}"
+backup_file() {
+  local file="${1:-}" label="${2:-file}"
+  [[ -f "${file}" ]] || fatal "${label} not found: ${file}"
+  local backup="${file}.bak.ssh-auth-notify.$(date +%Y%m%d-%H%M%S)"
+  cp -a "${file}" "${backup}"
+  log "backup ${label}: ${backup}"
 }
+
+backup_pam() {
+  backup_file "${PAM_FILE}" "PAM"
+}
+
 
 pam_has_block() {
   [[ -f "${PAM_FILE}" ]] && grep -Fq "${PAM_BEGIN}" "${PAM_FILE}" 2>/dev/null
@@ -228,6 +237,48 @@ remove_pam_block() {
   install -m 0644 "${PAM_FILE}.tmp.${PROJECT_NAME}" "${PAM_FILE}"
   rm -f "${PAM_FILE}.tmp.${PROJECT_NAME}"
   log "removed PAM block from ${PAM_FILE}"
+}
+
+sshd_dropin_present() {
+  [[ -f "${SSHD_DROPIN}" ]]
+}
+
+sshd_config_includes_dropins() {
+  [[ -f "${SSHD_CONFIG}" ]] || return 1
+  awk '
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*Include[[:space:]]+/ {
+      for (i = 2; i <= NF; i++) {
+        if ($i == "/etc/ssh/sshd_config.d/*.conf" || $i == "sshd_config.d/*.conf") { found=1 }
+      }
+    }
+    END { exit(found == 1 ? 0 : 1) }
+  ' "${SSHD_CONFIG}"
+}
+
+install_sshd_use_pam() {
+  install -d -m 0755 "${SSHD_CONFIG_DIR}"
+  {
+    printf '# Created by ssh-auth-notify. Remove with: ssh-auth-notify-manager.sh uninstall\n'
+    printf 'UsePAM yes\n'
+  } >"${SSHD_DROPIN}"
+  chmod 0644 "${SSHD_DROPIN}"
+  log "installed sshd_config drop-in: ${SSHD_DROPIN}"
+
+  if ! sshd_config_includes_dropins; then
+    warn "${SSHD_CONFIG} does not appear to include ${SSHD_CONFIG_DIR}/*.conf; ${SSHD_DROPIN} may not take effect until Include is enabled manually"
+  fi
+  warn "reload sshd after install so UsePAM yes takes effect, e.g. systemctl reload sshd || systemctl reload ssh"
+}
+
+remove_sshd_use_pam_block() {
+  if sshd_dropin_present; then
+    rm -f -- "${SSHD_DROPIN}"
+    log "removed sshd_config drop-in: ${SSHD_DROPIN}"
+    warn "reload sshd after uninstall if you need the restored UsePAM setting to take effect"
+  else
+    log "sshd_config drop-in not present: ${SSHD_DROPIN}"
+  fi
 }
 
 validate_backend_config() {
@@ -357,6 +408,7 @@ cmd_install() {
   check_dependencies
   install_scripts
   ensure_install_config
+  install_sshd_use_pam
   install_pam_block
   log "install complete"
   log "edit ${CONFIG_FILE} or run: sudo $0 configure"
@@ -371,6 +423,7 @@ cmd_uninstall() {
     esac
   done
   remove_pam_block
+  remove_sshd_use_pam_block
   rm -rf "${INSTALL_DIR}" "${CONFIG_DIR}"
   log "removed ${INSTALL_DIR} and ${CONFIG_DIR}"
   if [[ "${PURGE_BACKUPS}" -eq 1 ]]; then
@@ -389,6 +442,16 @@ cmd_status() {
   fi
   if [[ -f "${CONFIG_FILE}" ]]; then
     log "config permissions: $(stat -c '%a' "${CONFIG_FILE}" 2>/dev/null || stat -f '%Lp' "${CONFIG_FILE}" 2>/dev/null || echo unknown)"
+  fi
+  if sshd_dropin_present; then
+    log "sshd_config drop-in: present (${SSHD_DROPIN})"
+  else
+    log "sshd_config drop-in: missing (${SSHD_DROPIN})"
+  fi
+  if sshd_config_includes_dropins; then
+    log "sshd_config.d Include: present"
+  else
+    log "sshd_config.d Include: missing or unknown"
   fi
 }
 
