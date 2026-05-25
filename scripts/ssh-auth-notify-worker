@@ -66,14 +66,14 @@ format_body() {
   cat <<BODY
 ✅ New SSH login detected
 
-👤 User        : ${user}
-🌐 Remote IP   : ${rhost}
-🖥️ Host        : ${shown_host}
-🔧 Service     : ${service}
-💻 Terminal    : ${tty}
-📌 Event       : $(human_pam_type "${pam_type}")
-🕒 Time        : ${now}
-🚀 Trigger     : $(human_source "${source_arg}")
+User       : 👤 ${user}
+Remote IP  : 🌐 ${rhost}
+Host       : 🖥️ ${shown_host}
+Service    : 🔧 ${service}
+Terminal   : 💻 ${tty}
+Event      : 📌 $(human_pam_type "${pam_type}")
+Time       : 🕒 ${now}
+Trigger    : 🚀 $(human_source "${source_arg}")
 BODY
 }
 
