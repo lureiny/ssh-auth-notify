@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+TITLE=""
+BODY=""
+
+while (($#)); do
+  case "$1" in
+    --title) TITLE="${2:-}"; shift 2 ;;
+    --body) BODY="${2:-}"; shift 2 ;;
+    *) printf '[ssh-auth-notify-send] unknown argument: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+log_debug() {
+  if [[ "${SSH_AUTH_NOTIFY_DEBUG:-0}" == "1" ]]; then
+    printf '[ssh-auth-notify-send] %s\n' "$*" >&2
+  fi
+}
+
+urlencode() {
+  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
+}
+
+valid_timeout() {
+  [[ "${1:-}" =~ ^[0-9]+([.][0-9]+)?$ ]]
+}
+
+send_bark() {
+  [[ -n "${BARK_URL:-}" ]] || { log_debug "BARK_URL is empty"; return 1; }
+  local timeout="${SSH_AUTH_NOTIFY_TIMEOUT:-5}" url title_enc body_enc
+  valid_timeout "${timeout}" || timeout="5"
+  title_enc="$(urlencode "${TITLE}")"
+  body_enc="$(urlencode "${BODY}")"
+  url="${BARK_URL%/}/${title_enc}/${body_enc}"
+  curl -fsS --max-time "${timeout}" "${url}" >/dev/null
+}
+
+send_telegram() {
+  [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] || { log_debug "TELEGRAM_BOT_TOKEN is empty"; return 1; }
+  [[ -n "${TELEGRAM_CHAT_ID:-}" ]] || { log_debug "TELEGRAM_CHAT_ID is empty"; return 1; }
+  local timeout="${SSH_AUTH_NOTIFY_TIMEOUT:-5}" api
+  valid_timeout "${timeout}" || timeout="5"
+  api="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+  curl -fsS --max-time "${timeout}" -X POST "${api}" \
+    --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+    --data-urlencode "text=${TITLE}
+
+${BODY}" \
+    --data "disable_web_page_preview=true" >/dev/null
+}
+
+main() {
+  [[ -n "${TITLE}" ]] || TITLE="SSH login"
+  [[ -n "${BODY}" ]] || BODY="empty body"
+
+  case "${SSH_AUTH_NOTIFY_BACKEND:-}" in
+    bark) send_bark ;;
+    telegram) send_telegram ;;
+    *) printf '[ssh-auth-notify-send] unsupported backend: %s\n' "${SSH_AUTH_NOTIFY_BACKEND:-empty}" >&2; exit 1 ;;
+  esac
+}
+
+main "$@"

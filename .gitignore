@@ -1,0 +1,5 @@
+*.bak
+*.tmp
+*.swp
+.DS_Store
+codex_ssh_auth_notify_systemd_run_bundle.md

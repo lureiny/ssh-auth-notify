@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+CONFIG_FILE="${SSH_AUTH_NOTIFY_CONFIG:-/etc/ssh-auth-notify/env}"
+SENDER="${SSH_AUTH_NOTIFY_SENDER:-/opt/ssh-auth-notify/scripts/ssh-auth-notify-send}"
+
+log_debug() {
+  if [[ "${SSH_AUTH_NOTIFY_DEBUG:-0}" == "1" ]]; then
+    printf '[ssh-auth-notify-worker] %s\n' "$*" >&2
+  fi
+}
+
+load_config() {
+  if [[ -f "${CONFIG_FILE}" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${CONFIG_FILE}"
+    set +a
+  fi
+}
+
+csv_contains() {
+  local csv="${1:-}" needle="${2:-}" old_ifs item
+  [[ -n "${csv}" && -n "${needle}" ]] || return 1
+  old_ifs="${IFS}"
+  IFS=',' read -r -a items <<<"${csv}"
+  IFS="${old_ifs}"
+  for item in "${items[@]}"; do
+    item="${item//[[:space:]]/}"
+    [[ "${item}" == "${needle}" ]] && return 0
+  done
+  return 1
+}
+
+should_notify_user() {
+  local user="${1:-}"
+  if [[ -n "${SSH_AUTH_NOTIFY_ONLY_USERS:-}" ]]; then
+    csv_contains "${SSH_AUTH_NOTIFY_ONLY_USERS}" "${user}" || return 1
+  fi
+  if [[ -n "${SSH_AUTH_NOTIFY_SKIP_USERS:-}" ]]; then
+    csv_contains "${SSH_AUTH_NOTIFY_SKIP_USERS}" "${user}" && return 1
+  fi
+  return 0
+}
+
+main() {
+  load_config
+
+  local source_arg user rhost service tty pam_type host shown_host now title body
+  source_arg="unknown"
+  if [[ "${1:-}" == "--source" ]]; then
+    source_arg="${2:-unknown}"
+  fi
+
+  user="${PAM_USER:-unknown}"
+  rhost="${PAM_RHOST:-unknown}"
+  service="${PAM_SERVICE:-sshd}"
+  tty="${PAM_TTY:-unknown}"
+  pam_type="${PAM_TYPE:-unknown}"
+  host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || printf unknown)"
+  shown_host="${SSH_AUTH_NOTIFY_HOST_ALIAS:-${host}}"
+  now="$(date -Is)"
+
+  if ! should_notify_user "${user}"; then
+    log_debug "skip user=${user}"
+    exit 0
+  fi
+
+  title="SSH login on ${shown_host}"
+  body="user=${user}
+rhost=${rhost}
+service=${service}
+tty=${tty}
+pam_type=${pam_type}
+time=${now}
+source=${source_arg}"
+
+  if [[ -x "${SENDER}" ]]; then
+    "${SENDER}" --title "${title}" --body "${body}" || log_debug "send failed"
+  else
+    log_debug "sender not executable: ${SENDER}"
+  fi
+}
+
+main "$@"

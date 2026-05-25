@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Called by pam_exec.so. This script must never block or fail SSH login.
+
+set -u
+
+PROJECT_NAME="ssh-auth-notify"
+WORKER="/opt/ssh-auth-notify/scripts/ssh-auth-notify-worker"
+
+safe_exit() { exit 0; }
+trap safe_exit EXIT
+
+sanitize_unit_token() {
+  local input="${1:-unknown}"
+  input="${input//[^A-Za-z0-9_.-]/_}"
+  printf '%s' "${input:0:32}"
+}
+
+run_systemd() {
+  [[ -x "${WORKER}" ]] || return 0
+  command -v systemd-run >/dev/null 2>&1 || return 0
+
+  local user rhost ts unit
+  user="$(sanitize_unit_token "${PAM_USER:-unknown}")"
+  rhost="$(sanitize_unit_token "${PAM_RHOST:-unknown}")"
+  ts="$(date +%s)"
+  unit="${PROJECT_NAME}-${user}-${rhost}-${ts}-$$"
+
+  local env_args=(
+    "--setenv=PAM_USER=${PAM_USER:-}"
+    "--setenv=PAM_RHOST=${PAM_RHOST:-}"
+    "--setenv=PAM_SERVICE=${PAM_SERVICE:-sshd}"
+    "--setenv=PAM_TTY=${PAM_TTY:-}"
+    "--setenv=PAM_TYPE=${PAM_TYPE:-}"
+  )
+
+  local base_args=(
+    --quiet
+    --collect
+    "--unit=${unit}"
+    "--description=SSH auth notify for ${user}"
+  )
+
+  local hardening_props=(
+    -p Type=exec
+    -p NoNewPrivileges=yes
+    -p PrivateTmp=yes
+    -p ProtectSystem=strict
+    -p ProtectHome=read-only
+    -p ReadWritePaths=/tmp
+  )
+
+  systemd-run "${base_args[@]}" "${hardening_props[@]}" "${env_args[@]}" "${WORKER}" --source pam >/dev/null 2>&1 && return 0
+  systemd-run "${base_args[@]}" "${env_args[@]}" "${WORKER}" --source pam >/dev/null 2>&1 || true
+}
+
+run_systemd
+exit 0
