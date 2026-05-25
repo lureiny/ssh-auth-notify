@@ -26,7 +26,7 @@ PAM account
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-如果已有配置不存在或不完整，安装过程会提示选择 Telegram、Bark 或 `telegram,bark`。已有完整配置会保留。只重新配置通知参数：
+如果已有配置不存在或不完整，安装过程会优先使用 `whiptail` 或 `dialog` 显示 channel checklist，然后询问对应凭据；极简系统会回退到编号文本选择。已有完整配置会保留。只重新配置通知参数：
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure

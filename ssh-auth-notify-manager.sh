@@ -452,13 +452,81 @@ parse_common_config_args() {
   done
 }
 
+prompt_backends_interactive() {
+  local selected channel_file name i old_ifs item result
+
+  if have_cmd whiptail && [[ -t 0 && -t 1 ]]; then
+    local options=()
+    for channel_file in "${CHANNEL_FILES[@]}"; do
+      name="${channel_file%.sh}"
+      if [[ "${name}" == "telegram" ]]; then
+        options+=("${name}" "${name} notifications" ON)
+      else
+        options+=("${name}" "${name} notifications" OFF)
+      fi
+    done
+    selected="$(whiptail --title "ssh-auth-notify" --checklist "Select notification channels" 15 72 8 "${options[@]}" 3>&1 1>&2 2>&3)" || return 1
+    selected="${selected//"/}"
+    selected="${selected// /,}"
+    [[ -n "${selected}" ]] && { printf "%s" "${selected}"; return 0; }
+  fi
+
+  if have_cmd dialog && [[ -t 0 && -t 1 ]]; then
+    local options=()
+    for channel_file in "${CHANNEL_FILES[@]}"; do
+      name="${channel_file%.sh}"
+      if [[ "${name}" == "telegram" ]]; then
+        options+=("${name}" "${name} notifications" on)
+      else
+        options+=("${name}" "${name} notifications" off)
+      fi
+    done
+    selected="$(dialog --stdout --checklist "Select notification channels" 15 72 8 "${options[@]}")" || return 1
+    selected="${selected//"/}"
+    selected="${selected// /,}"
+    [[ -n "${selected}" ]] && { printf "%s" "${selected}"; return 0; }
+  fi
+
+  printf "Available channels:\n" >&2
+  i=1
+  for channel_file in "${CHANNEL_FILES[@]}"; do
+    printf "  %d) %s\n" "${i}" "${channel_file%.sh}" >&2
+    i=$((i + 1))
+  done
+  read -r -p "Channels [1 or 1,2 or telegram,bark; default: 1]: " selected
+  selected="${selected:-1}"
+  selected="${selected//[[:space:]]/}"
+
+  old_ifs="${IFS}"
+  IFS="," read -r -a items <<<"${selected}"
+  IFS="${old_ifs}"
+  result=""
+  for item in "${items[@]}"; do
+    if [[ "${item}" =~ ^[0-9]+$ ]]; then
+      i=1
+      for channel_file in "${CHANNEL_FILES[@]}"; do
+        if [[ "${i}" -eq "${item}" ]]; then
+          name="${channel_file%.sh}"
+          result="${result}${result:+,}${name}"
+          break
+        fi
+        i=$((i + 1))
+      done
+    else
+      result="${result}${result:+,}${item}"
+    fi
+  done
+
+  printf "%s" "${result:-telegram}"
+}
+
 configure_interactive() {
   need_root
   install -d -m 0700 "${CONFIG_DIR}"
 
   local backends token chat_id bark_url
-  read -r -p "Backends [telegram/bark/telegram,bark]: " backends
-  backends="${backends:-telegram}"
+  backends="$(prompt_backends_interactive)" || fatal "channel selection cancelled"
+  # selected via checklist or fallback prompt
 
   if backend_list_contains "${backends}" "telegram"; then
     read -r -p "Telegram bot token: " token

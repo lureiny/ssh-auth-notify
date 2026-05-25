@@ -26,7 +26,7 @@ Run directly from the GitHub raw URL. No clone is required.
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-If no complete config exists, install prompts for Telegram, Bark, or `telegram,bark`. Existing complete config is preserved. Reconfigure only the notification config with:
+If no complete config exists, install opens a channel checklist when `whiptail` or `dialog` is available, then asks for the required credentials. On minimal systems it falls back to a numbered text prompt. Existing complete config is preserved. Reconfigure only the notification config with:
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure
