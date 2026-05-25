@@ -26,7 +26,7 @@ PAM account
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-如果已有配置不存在或不完整，安装过程会优先使用 `whiptail` 或 `dialog` 显示 channel checklist，然后询问对应凭据；极简系统会回退到编号文本选择。已有完整配置会保留。只重新配置通知参数：
+如果已有配置不存在或不完整，安装过程会优先使用 `whiptail` 或 `dialog` 显示 channel checklist，然后询问对应凭据；极简系统会回退到编号文本选择。已有完整配置会保留。安装或重新安装时可以传入 `--node-name NAME` 设置通知里展示的节点名称；未指定时 worker 会回落到机器 hostname。机器地址默认不展示；用 `--send-machine-address` 开启，用 `--no-send-machine-address` 关闭，或用 `--machine-address ADDR_OR_HOST` 指定固定 IPv4/域名并自动开启。开启后如果没有固定值，worker 会从 `ifconfig.me` 获取外部 IPv4。只重新配置通知参数：
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure
@@ -35,7 +35,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-no
 非交互安装：
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install --backends telegram,bark --telegram-bot-token TOKEN --telegram-chat-id CHAT_ID --bark-url https://api.day.app/KEY
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install --backends telegram,bark --telegram-bot-token TOKEN --telegram-chat-id CHAT_ID --bark-url https://api.day.app/KEY --node-name prod-api-01 --machine-address ssh.example.com
 ```
 
 manager 会从以下地址下载运行所需脚本和所有内置 channel 模块：
@@ -88,6 +88,8 @@ TELEGRAM_BOT_TOKEN=123456:abcdef
 TELEGRAM_CHAT_ID=123456789
 SSH_AUTH_NOTIFY_TIMEOUT=5
 SSH_AUTH_NOTIFY_HOST_ALIAS=
+SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=0
+SSH_AUTH_NOTIFY_MACHINE_ADDR=
 SSH_AUTH_NOTIFY_DEBUG=0
 SSH_AUTH_NOTIFY_SKIP_USERS=
 SSH_AUTH_NOTIFY_ONLY_USERS=
@@ -101,6 +103,8 @@ SSH_AUTH_NOTIFY_BACKEND=bark
 BARK_URL=https://api.day.app/your_key
 SSH_AUTH_NOTIFY_TIMEOUT=5
 SSH_AUTH_NOTIFY_HOST_ALIAS=
+SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=0
+SSH_AUTH_NOTIFY_MACHINE_ADDR=
 SSH_AUTH_NOTIFY_DEBUG=0
 SSH_AUTH_NOTIFY_SKIP_USERS=
 SSH_AUTH_NOTIFY_ONLY_USERS=
@@ -116,12 +120,14 @@ TELEGRAM_CHAT_ID=123456789
 BARK_URL=https://api.day.app/your_key
 SSH_AUTH_NOTIFY_TIMEOUT=5
 SSH_AUTH_NOTIFY_HOST_ALIAS=
+SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=0
+SSH_AUTH_NOTIFY_MACHINE_ADDR=
 SSH_AUTH_NOTIFY_DEBUG=0
 SSH_AUTH_NOTIFY_SKIP_USERS=
 SSH_AUTH_NOTIFY_ONLY_USERS=
 ```
 
-`SSH_AUTH_NOTIFY_BACKEND` 是兼容旧版本的字段，新配置优先使用 `SSH_AUTH_NOTIFY_BACKENDS`。`SSH_AUTH_NOTIFY_ONLY_USERS` 非空时只通知这些用户；`SSH_AUTH_NOTIFY_SKIP_USERS` 命中时跳过通知。
+`SSH_AUTH_NOTIFY_BACKEND` 是兼容旧版本的字段，新配置优先使用 `SSH_AUTH_NOTIFY_BACKENDS`。`SSH_AUTH_NOTIFY_HOST_ALIAS` 会覆盖通知中展示的主机名；留空则使用 `hostname -f`/`hostname`。`SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=1` 会在通知中增加机器地址字段。`SSH_AUTH_NOTIFY_MACHINE_ADDR` 可以是固定 IPv4 地址或域名；开启后留空则从 `ifconfig.me` 获取外部 IPv4。`SSH_AUTH_NOTIFY_ONLY_USERS` 非空时只通知这些用户；`SSH_AUTH_NOTIFY_SKIP_USERS` 命中时跳过通知。
 
 ## Channel 模块
 

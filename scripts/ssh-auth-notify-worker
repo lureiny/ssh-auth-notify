@@ -61,14 +61,42 @@ human_source() {
   esac
 }
 
+truthy() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+fetch_external_ipv4() {
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -4fsSL --connect-timeout 3 --max-time "${SSH_AUTH_NOTIFY_TIMEOUT:-5}" https://ifconfig.me/ip 2>/dev/null | tr -d '\r\n'
+}
+
+resolve_machine_addr() {
+  if ! truthy "${SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR:-0}"; then
+    return 0
+  fi
+  if [[ -n "${SSH_AUTH_NOTIFY_MACHINE_ADDR:-}" ]]; then
+    printf "%s" "${SSH_AUTH_NOTIFY_MACHINE_ADDR}"
+    return 0
+  fi
+  fetch_external_ipv4 || true
+}
+
 format_body() {
-  local user="${1:-unknown}" rhost="${2:-unknown}" service="${3:-unknown}" tty="${4:-unknown}" pam_type="${5:-unknown}" shown_host="${6:-unknown}" now="${7:-unknown}" source_arg="${8:-unknown}"
+  local user="${1:-unknown}" rhost="${2:-unknown}" service="${3:-unknown}" tty="${4:-unknown}" pam_type="${5:-unknown}" shown_host="${6:-unknown}" now="${7:-unknown}" source_arg="${8:-unknown}" machine_addr="${9:-}"
   cat <<BODY
 ✅ New SSH login detected
 
 👤 User: ${user}
 🌐 Remote IP: ${rhost}
 🖥️ Host: ${shown_host}
+BODY
+  if [[ -n "${machine_addr}" ]]; then
+    printf '🏷️ Machine Address: %s\n' "${machine_addr}"
+  fi
+  cat <<BODY
 🔧 Service: ${service}
 💻 Terminal: ${tty}
 📌 Event: $(human_pam_type "${pam_type}")
@@ -86,14 +114,17 @@ html_escape_text() {
 }
 
 format_body_html() {
-  local user="${1:-unknown}" rhost="${2:-unknown}" service="${3:-unknown}" tty="${4:-unknown}" pam_type="${5:-unknown}" shown_host="${6:-unknown}" now="${7:-unknown}" source_arg="${8:-unknown}"
+  local user="${1:-unknown}" rhost="${2:-unknown}" service="${3:-unknown}" tty="${4:-unknown}" pam_type="${5:-unknown}" shown_host="${6:-unknown}" now="${7:-unknown}" source_arg="${8:-unknown}" machine_addr="${9:-}"
+  local machine_addr_line=""
+  [[ -n "${machine_addr}" ]] && machine_addr_line="Machine   : $(html_escape_text "${machine_addr}")
+"
   cat <<BODY
 ✅ New SSH login detected
 
 <pre>User      : $(html_escape_text "${user}")
 Remote IP : $(html_escape_text "${rhost}")
 Host      : $(html_escape_text "${shown_host}")
-Service   : $(html_escape_text "${service}")
+${machine_addr_line}Service   : $(html_escape_text "${service}")
 Terminal  : $(html_escape_text "${tty}")
 Event     : $(html_escape_text "$(human_pam_type "${pam_type}")")
 Time      : $(html_escape_text "${now}")
@@ -104,7 +135,7 @@ BODY
 main() {
   load_config
 
-  local source_arg user rhost service tty pam_type host shown_host now title body body_html
+  local source_arg user rhost service tty pam_type host shown_host machine_addr now title body body_html
   source_arg="unknown"
   if [[ "${1:-}" == "--source" ]]; then
     source_arg="${2:-unknown}"
@@ -117,6 +148,7 @@ main() {
   pam_type="${PAM_TYPE:-unknown}"
   host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || printf unknown)"
   shown_host="${SSH_AUTH_NOTIFY_HOST_ALIAS:-${host}}"
+  machine_addr="$(resolve_machine_addr)"
   now="$(date -Is)"
 
   if ! should_notify_user "${user}"; then
@@ -125,8 +157,8 @@ main() {
   fi
 
   title="🔐 SSH Login · ${shown_host}"
-  body="$(format_body "${user}" "${rhost}" "${service}" "${tty}" "${pam_type}" "${shown_host}" "${now}" "${source_arg}")"
-  body_html="$(format_body_html "${user}" "${rhost}" "${service}" "${tty}" "${pam_type}" "${shown_host}" "${now}" "${source_arg}")"
+  body="$(format_body "${user}" "${rhost}" "${service}" "${tty}" "${pam_type}" "${shown_host}" "${now}" "${source_arg}" "${machine_addr}")"
+  body_html="$(format_body_html "${user}" "${rhost}" "${service}" "${tty}" "${pam_type}" "${shown_host}" "${now}" "${source_arg}" "${machine_addr}")"
 
   if [[ -x "${SENDER}" ]]; then
     "${SENDER}" --title "${title}" --body "${body}" --body-html "${body_html}" || log_debug "send failed"

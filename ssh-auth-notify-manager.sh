@@ -25,6 +25,10 @@ INSTALL_BARK_URL=""
 INSTALL_TG_TOKEN=""
 INSTALL_TG_CHAT_ID=""
 INSTALL_TIMEOUT="5"
+INSTALL_NODE_NAME=""
+INSTALL_SEND_MACHINE_ADDR="0"
+INSTALL_SEND_MACHINE_ADDR_SET="0"
+INSTALL_MACHINE_ADDR=""
 PURGE_BACKUPS=0
 TEST_TMPDIR=""
 TEST_SCRIPT_DIR=""
@@ -218,8 +222,12 @@ validate_backend_config() {
   [[ "${seen}" -eq 1 ]] || fatal "backend is required"
 }
 
+quote_env_value() {
+  printf '%q' "${1:-}"
+}
+
 write_config_file() {
-  local backends="${1:-telegram}" tg_token="${2:-}" tg_chat_id="${3:-}" bark_url="${4:-}" timeout="${5:-5}"
+  local backends="${1:-telegram}" tg_token="${2:-}" tg_chat_id="${3:-}" bark_url="${4:-}" timeout="${5:-5}" node_name="${6:-}" send_machine_addr="${7:-0}" machine_addr="${8:-}"
   install -d -m 0700 "${CONFIG_DIR}"
   umask 077
   {
@@ -234,12 +242,52 @@ write_config_file() {
     printf 'BARK_URL=%q\n' "${bark_url}"
     printf '\n# Common\n'
     printf 'SSH_AUTH_NOTIFY_TIMEOUT=%q\n' "${timeout}"
-    printf 'SSH_AUTH_NOTIFY_HOST_ALIAS=\n'
+    if [[ -n "${node_name}" ]]; then
+      printf 'SSH_AUTH_NOTIFY_HOST_ALIAS=%q\n' "${node_name}"
+    else
+      printf 'SSH_AUTH_NOTIFY_HOST_ALIAS=\n'
+    fi
+    printf 'SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=%q\n' "${send_machine_addr}"
+    printf 'SSH_AUTH_NOTIFY_MACHINE_ADDR=%q\n' "${machine_addr}"
     printf 'SSH_AUTH_NOTIFY_DEBUG=0\n'
     printf 'SSH_AUTH_NOTIFY_SKIP_USERS=\n'
     printf 'SSH_AUTH_NOTIFY_ONLY_USERS=\n'
   } >"${CONFIG_FILE}"
   chmod 0600 "${CONFIG_FILE}"
+}
+
+update_config_key() {
+  local key="${1:-}" value="${2:-}" tmp="${CONFIG_FILE}.tmp.${PROJECT_NAME}" quoted_value
+  [[ -n "${key}" && -f "${CONFIG_FILE}" ]] || return 0
+  quoted_value="$(quote_env_value "${value}")"
+  awk -v key="${key}" -v value="${quoted_value}" '
+    BEGIN { updated = 0 }
+    $0 ~ "^" key "=" {
+      print key "=" value
+      updated = 1
+      next
+    }
+    { print }
+    END {
+      if (updated != 1) {
+        print key "=" value
+      }
+    }
+  ' "${CONFIG_FILE}" >"${tmp}"
+  install -m 0600 "${tmp}" "${CONFIG_FILE}"
+  rm -f "${tmp}"
+}
+
+update_config_install_options() {
+  if [[ -n "${INSTALL_NODE_NAME}" ]]; then
+    update_config_key "SSH_AUTH_NOTIFY_HOST_ALIAS" "${INSTALL_NODE_NAME}"
+    log "updated node name in config: ${CONFIG_FILE}"
+  fi
+  if [[ "${INSTALL_SEND_MACHINE_ADDR_SET}" -eq 1 ]]; then
+    update_config_key "SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR" "${INSTALL_SEND_MACHINE_ADDR}"
+    update_config_key "SSH_AUTH_NOTIFY_MACHINE_ADDR" "${INSTALL_MACHINE_ADDR}"
+    log "updated machine address options in config: ${CONFIG_FILE}"
+  fi
 }
 
 config_is_complete() {
@@ -272,13 +320,14 @@ ensure_install_config() {
   install -d -m 0700 "${CONFIG_DIR}"
 
   if [[ -n "${INSTALL_BACKENDS}" ]]; then
-    write_config_file "${INSTALL_BACKENDS}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}" "${INSTALL_TIMEOUT}"
+    write_config_file "${INSTALL_BACKENDS}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}" "${INSTALL_TIMEOUT}" "${INSTALL_NODE_NAME}" "${INSTALL_SEND_MACHINE_ADDR}" "${INSTALL_MACHINE_ADDR}"
     log "wrote config: ${CONFIG_FILE}"
     return 0
   fi
 
   if config_is_complete; then
     chmod 0600 "${CONFIG_FILE}"
+    update_config_install_options
     log "config already exists and looks complete: ${CONFIG_FILE}"
     return 0
   fi
@@ -447,6 +496,10 @@ parse_common_config_args() {
       --telegram-bot-token) INSTALL_TG_TOKEN="${2:-}"; shift 2 ;;
       --telegram-chat-id) INSTALL_TG_CHAT_ID="${2:-}"; shift 2 ;;
       --timeout) INSTALL_TIMEOUT="${2:-5}"; shift 2 ;;
+      --node-name|--host-alias) INSTALL_NODE_NAME="${2:-}"; shift 2 ;;
+      --send-machine-address) INSTALL_SEND_MACHINE_ADDR="1"; INSTALL_SEND_MACHINE_ADDR_SET="1"; shift ;;
+      --no-send-machine-address) INSTALL_SEND_MACHINE_ADDR="0"; INSTALL_SEND_MACHINE_ADDR_SET="1"; shift ;;
+      --machine-address|--machine-host) INSTALL_MACHINE_ADDR="${2:-}"; INSTALL_SEND_MACHINE_ADDR="1"; INSTALL_SEND_MACHINE_ADDR_SET="1"; shift 2 ;;
       *) fatal "unknown argument: $1" ;;
     esac
   done
@@ -537,7 +590,7 @@ configure_interactive() {
   fi
 
   validate_backend_config "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}"
-  write_config_file "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}" "5"
+  write_config_file "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}" "5" "${INSTALL_NODE_NAME}" "${INSTALL_SEND_MACHINE_ADDR}" "${INSTALL_MACHINE_ADDR}"
 
   log "updated config: ${CONFIG_FILE}"
 }
@@ -595,6 +648,8 @@ cmd_test() {
     printf 'BARK_URL=%q\n' "${TEST_BARK_URL}"
     printf 'SSH_AUTH_NOTIFY_TIMEOUT=5\n'
     printf 'SSH_AUTH_NOTIFY_HOST_ALIAS=test-host\n'
+    printf 'SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=0\n'
+    printf 'SSH_AUTH_NOTIFY_MACHINE_ADDR=\n'
     printf 'SSH_AUTH_NOTIFY_DEBUG=1\n'
     printf 'SSH_AUTH_NOTIFY_SKIP_USERS=\n'
     printf 'SSH_AUTH_NOTIFY_ONLY_USERS=\n'
@@ -705,9 +760,9 @@ cmd_status() {
 usage() {
   cat <<USAGE
 Usage:
-  $0 install [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS]
+  $0 install [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS] [--node-name NAME] [--send-machine-address|--no-send-machine-address] [--machine-address ADDR_OR_HOST]
   $0 update
-  $0 reinstall [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS]
+  $0 reinstall [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS] [--node-name NAME] [--send-machine-address|--no-send-machine-address] [--machine-address ADDR_OR_HOST]
   $0 configure
   $0 test [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--user USER] [--rhost IP] [--tty TTY]
   $0 status

@@ -26,7 +26,7 @@ Run directly from the GitHub raw URL. No clone is required.
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-If no complete config exists, install opens a channel checklist when `whiptail` or `dialog` is available, then asks for the required credentials. On minimal systems it falls back to a numbered text prompt. Existing complete config is preserved. Reconfigure only the notification config with:
+If no complete config exists, install opens a channel checklist when `whiptail` or `dialog` is available, then asks for the required credentials. On minimal systems it falls back to a numbered text prompt. Existing complete config is preserved. Pass `--node-name NAME` during install or reinstall to set the display name used in notifications; when omitted, the worker falls back to the machine hostname. Machine address display is disabled by default; enable it with `--send-machine-address`, disable it with `--no-send-machine-address`, or pass `--machine-address ADDR_OR_HOST` to enable it with a fixed IPv4/domain. If enabled without a fixed value, the worker fetches the external IPv4 from `ifconfig.me`. Reconfigure only the notification config with:
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure
@@ -35,7 +35,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-no
 Non-interactive install example:
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install --backends telegram,bark --telegram-bot-token TOKEN --telegram-chat-id CHAT_ID --bark-url https://api.day.app/KEY
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install --backends telegram,bark --telegram-bot-token TOKEN --telegram-chat-id CHAT_ID --bark-url https://api.day.app/KEY --node-name prod-api-01 --machine-address ssh.example.com
 ```
 
 The manager downloads all runtime scripts and built-in channel modules from:
@@ -90,6 +90,8 @@ TELEGRAM_BOT_TOKEN=123456:abcdef
 TELEGRAM_CHAT_ID=123456789
 SSH_AUTH_NOTIFY_TIMEOUT=5
 SSH_AUTH_NOTIFY_HOST_ALIAS=
+SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=0
+SSH_AUTH_NOTIFY_MACHINE_ADDR=
 SSH_AUTH_NOTIFY_DEBUG=0
 SSH_AUTH_NOTIFY_SKIP_USERS=
 SSH_AUTH_NOTIFY_ONLY_USERS=
@@ -103,6 +105,8 @@ SSH_AUTH_NOTIFY_BACKEND=bark
 BARK_URL=https://api.day.app/your_key
 SSH_AUTH_NOTIFY_TIMEOUT=5
 SSH_AUTH_NOTIFY_HOST_ALIAS=
+SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=0
+SSH_AUTH_NOTIFY_MACHINE_ADDR=
 SSH_AUTH_NOTIFY_DEBUG=0
 SSH_AUTH_NOTIFY_SKIP_USERS=
 SSH_AUTH_NOTIFY_ONLY_USERS=
@@ -118,12 +122,14 @@ TELEGRAM_CHAT_ID=123456789
 BARK_URL=https://api.day.app/your_key
 SSH_AUTH_NOTIFY_TIMEOUT=5
 SSH_AUTH_NOTIFY_HOST_ALIAS=
+SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=0
+SSH_AUTH_NOTIFY_MACHINE_ADDR=
 SSH_AUTH_NOTIFY_DEBUG=0
 SSH_AUTH_NOTIFY_SKIP_USERS=
 SSH_AUTH_NOTIFY_ONLY_USERS=
 ```
 
-`SSH_AUTH_NOTIFY_BACKEND` is kept for compatibility. New config should use `SSH_AUTH_NOTIFY_BACKENDS`. If `SSH_AUTH_NOTIFY_ONLY_USERS` is set, only those comma-separated users are notified. `SSH_AUTH_NOTIFY_SKIP_USERS` suppresses matching users.
+`SSH_AUTH_NOTIFY_BACKEND` is kept for compatibility. New config should use `SSH_AUTH_NOTIFY_BACKENDS`. `SSH_AUTH_NOTIFY_HOST_ALIAS` overrides the host shown in notifications; leave it empty to use `hostname -f`/`hostname`. `SSH_AUTH_NOTIFY_SEND_MACHINE_ADDR=1` adds the machine address field. `SSH_AUTH_NOTIFY_MACHINE_ADDR` can be a fixed IPv4 address or domain; leave it empty to fetch the external IPv4 from `ifconfig.me` when the field is enabled. If `SSH_AUTH_NOTIFY_ONLY_USERS` is set, only those comma-separated users are notified. `SSH_AUTH_NOTIFY_SKIP_USERS` suppresses matching users.
 
 ## Channel Modules
 
