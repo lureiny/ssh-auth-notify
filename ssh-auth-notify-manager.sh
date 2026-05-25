@@ -14,8 +14,10 @@ SSHD_CONFIG="/etc/ssh/sshd_config"
 SSHD_CONFIG_DIR="/etc/ssh/sshd_config.d"
 SSHD_DROPIN="${SSHD_CONFIG_DIR}/99-ssh-auth-notify.conf"
 
-SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-${0:-.}}"
+SELF_DIR="$(cd -- "$(dirname -- "${SCRIPT_SOURCE}")" 2>/dev/null && pwd || pwd)"
 SRC_SCRIPT_DIR="${SELF_DIR}/scripts"
+REMOTE_BASE_URL="${SSH_AUTH_NOTIFY_BASE_URL:-https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main}"
 
 INSTALL_BACKENDS=""
 INSTALL_BARK_URL=""
@@ -24,6 +26,7 @@ INSTALL_TG_CHAT_ID=""
 INSTALL_TIMEOUT="5"
 PURGE_BACKUPS=0
 TEST_TMPDIR=""
+TEST_SCRIPT_DIR=""
 
 log() { printf '[%s] %s\n' "${PROJECT_NAME}" "$*"; }
 warn() { printf '[%s] WARN: %s\n' "${PROJECT_NAME}" "$*" >&2; }
@@ -114,6 +117,47 @@ check_dependencies() {
   done
   find_pam_exec || still_missing+=("pam_exec.so")
   ((${#still_missing[@]} == 0)) || fatal "dependencies still missing: ${still_missing[*]}"
+}
+
+check_test_dependencies() {
+  local missing=() cmd
+  for cmd in bash curl python3 install; do
+    have_cmd "${cmd}" || missing+=("${cmd}")
+  done
+  ((${#missing[@]} == 0)) || fatal "missing test dependencies: ${missing[*]}"
+}
+
+local_scripts_available() {
+  [[ -x "${SRC_SCRIPT_DIR}/ssh-auth-notify-wrapper" \
+    && -x "${SRC_SCRIPT_DIR}/ssh-auth-notify-worker" \
+    && -x "${SRC_SCRIPT_DIR}/ssh-auth-notify-send" ]]
+}
+
+download_project_script() {
+  local name="${1:-}" dest="${2:-}" url
+  [[ -n "${name}" && -n "${dest}" ]] || fatal "download_project_script requires name and dest"
+  have_cmd curl || fatal "curl is required to download project scripts"
+  url="${REMOTE_BASE_URL%/}/scripts/${name}"
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 30 "${url}" -o "${dest}"
+  chmod 0755 "${dest}"
+}
+
+install_or_download_scripts() {
+  local dest_dir="${1:-}"
+  [[ -n "${dest_dir}" ]] || fatal "destination script directory is required"
+  install -d -m 0755 "${dest_dir}"
+
+  if local_scripts_available; then
+    install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-wrapper" "${dest_dir}/ssh-auth-notify-wrapper"
+    install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-worker" "${dest_dir}/ssh-auth-notify-worker"
+    install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-send" "${dest_dir}/ssh-auth-notify-send"
+    return 0
+  fi
+
+  log "local scripts not found; downloading scripts from ${REMOTE_BASE_URL}"
+  download_project_script "ssh-auth-notify-wrapper" "${dest_dir}/ssh-auth-notify-wrapper"
+  download_project_script "ssh-auth-notify-worker" "${dest_dir}/ssh-auth-notify-worker"
+  download_project_script "ssh-auth-notify-send" "${dest_dir}/ssh-auth-notify-send"
 }
 
 primary_backend() {
@@ -240,12 +284,18 @@ ensure_install_config() {
 }
 
 install_scripts() {
-  [[ -d "${SRC_SCRIPT_DIR}" ]] || fatal "source scripts dir not found: ${SRC_SCRIPT_DIR}"
-  install -d -m 0755 "${SCRIPT_DIR}"
-  install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-wrapper" "${SCRIPT_DIR}/ssh-auth-notify-wrapper"
-  install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-worker" "${SCRIPT_DIR}/ssh-auth-notify-worker"
-  install -m 0755 "${SRC_SCRIPT_DIR}/ssh-auth-notify-send" "${SCRIPT_DIR}/ssh-auth-notify-send"
+  install_or_download_scripts "${SCRIPT_DIR}"
   log "installed scripts to ${SCRIPT_DIR}"
+}
+
+prepare_test_scripts() {
+  if local_scripts_available; then
+    TEST_SCRIPT_DIR="${SRC_SCRIPT_DIR}"
+    return 0
+  fi
+
+  TEST_SCRIPT_DIR="${TEST_TMPDIR}/scripts"
+  install_or_download_scripts "${TEST_SCRIPT_DIR}"
 }
 
 backup_file() {
@@ -448,6 +498,7 @@ cmd_test() {
     [[ -n "${TEST_BARK_URL}" ]] || read -r -p "Bark URL: " TEST_BARK_URL
   fi
   validate_backend_config "${TEST_BACKENDS}" "${TEST_TG_TOKEN}" "${TEST_TG_CHAT_ID}" "${TEST_BARK_URL}"
+  check_test_dependencies
 
   local tmpconf
   TEST_TMPDIR="$(mktemp -d)"
@@ -468,6 +519,7 @@ cmd_test() {
     printf 'SSH_AUTH_NOTIFY_ONLY_USERS=\n'
   } >"${tmpconf}"
   chmod 0600 "${tmpconf}"
+  prepare_test_scripts
 
   log "running non-persistent test; no PAM or install paths will be modified"
   PAM_USER="${TEST_USER}" \
@@ -476,8 +528,8 @@ cmd_test() {
   PAM_TTY="${TEST_TTY}" \
   PAM_TYPE="account" \
   SSH_AUTH_NOTIFY_CONFIG="${tmpconf}" \
-  SSH_AUTH_NOTIFY_SENDER="${SRC_SCRIPT_DIR}/ssh-auth-notify-send" \
-  "${SRC_SCRIPT_DIR}/ssh-auth-notify-worker" --source test
+  SSH_AUTH_NOTIFY_SENDER="${TEST_SCRIPT_DIR}/ssh-auth-notify-send" \
+  "${TEST_SCRIPT_DIR}/ssh-auth-notify-worker" --source test
 }
 
 cmd_install() {

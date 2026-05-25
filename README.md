@@ -18,25 +18,42 @@ PAM account
 
 ## 安装
 
-交互安装并配置：
+不需要 clone 或下载整个仓库。直接通过 GitHub raw URL 运行 manager：
 
 ```bash
-sudo ./ssh-auth-notify-manager.sh install
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+sudo bash -c "$(curl -fsSL "$MANAGER_URL")" -- install
 ```
 
-如果已有配置不存在或不完整，安装过程会提示选择 Telegram 或 Bark 并写入最小必要配置。已有完整配置会被保留；需要重新配置时执行：
+如果已有配置不存在或不完整，安装过程会提示选择 Telegram、Bark 或 `telegram,bark`，并写入最小必要配置。已有完整配置会被保留；需要重新配置时执行：
 
 ```bash
-sudo ./ssh-auth-notify-manager.sh configure
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+sudo bash -c "$(curl -fsSL "$MANAGER_URL")" -- configure
 ```
 
-或安装时直接写入最小配置：
+也可以非交互安装并直接写入配置：
 
 ```bash
-sudo ./ssh-auth-notify-manager.sh install \
-  --backends telegram \
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+sudo bash -c "$(curl -fsSL "$MANAGER_URL")" -- install \
+  --backends telegram,bark \
   --telegram-bot-token 'TOKEN' \
-  --telegram-chat-id 'CHAT_ID'
+  --telegram-chat-id 'CHAT_ID' \
+  --bark-url 'https://api.day.app/KEY'
+```
+
+安装时，manager 会自动从同一个 raw URL 下载所需脚本，不需要完整仓库。默认下载源是：
+
+```text
+https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main
+```
+
+如果你 fork 了仓库，可以覆盖下载源：
+
+```bash
+sudo SSH_AUTH_NOTIFY_BASE_URL="https://raw.githubusercontent.com/YOUR_NAME/ssh-auth-notify/main" \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/YOUR_NAME/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
 安装会检查依赖，安装脚本到 `/opt/ssh-auth-notify/scripts`，配置文件到 `/etc/ssh-auth-notify/env`，向 `/etc/pam.d/sshd` 插入带 marker 的 PAM block，并新增 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf` 写入 `UsePAM yes`。无参数安装会在配置缺失或不完整时进入交互配置；非交互环境请使用 `--backends ...` 参数。
@@ -102,7 +119,8 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 测试模式不会写入 `/opt/ssh-auth-notify`，不会写入 `/etc/ssh-auth-notify`，不会修改 `/etc/pam.d/sshd`。
 
 ```bash
-./ssh-auth-notify-manager.sh test \
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+bash -c "$(curl -fsSL "$MANAGER_URL")" -- test \
   --backends telegram \
   --telegram-bot-token 'TOKEN' \
   --telegram-chat-id 'CHAT_ID' \
@@ -111,7 +129,8 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 ```
 
 ```bash
-./ssh-auth-notify-manager.sh test \
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+bash -c "$(curl -fsSL "$MANAGER_URL")" -- test \
   --backends bark \
   --bark-url 'https://api.day.app/KEY' \
   --user demo \
@@ -121,7 +140,8 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 多后端：
 
 ```bash
-./ssh-auth-notify-manager.sh test \
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+bash -c "$(curl -fsSL "$MANAGER_URL")" -- test \
   --backends telegram,bark \
   --telegram-bot-token 'TOKEN' \
   --telegram-chat-id 'CHAT_ID' \
@@ -133,14 +153,16 @@ SSH_AUTH_NOTIFY_ONLY_USERS=
 ## 状态和卸载
 
 ```bash
-sudo ./ssh-auth-notify-manager.sh status
-sudo ./ssh-auth-notify-manager.sh uninstall
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+sudo bash -c "$(curl -fsSL "$MANAGER_URL")" -- status
+sudo bash -c "$(curl -fsSL "$MANAGER_URL")" -- uninstall
 ```
 
 卸载会删除本项目 PAM marker block、删除 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf`、删除 `/opt/ssh-auth-notify` 和 `/etc/ssh-auth-notify`。默认保留 PAM 备份；如需删除本项目备份：
 
 ```bash
-sudo ./ssh-auth-notify-manager.sh uninstall --purge-backups
+MANAGER_URL="https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh"
+sudo bash -c "$(curl -fsSL "$MANAGER_URL")" -- uninstall --purge-backups
 ```
 
 ## 本地验收
