@@ -545,6 +545,30 @@ cmd_test() {
   "${TEST_SCRIPT_DIR}/ssh-auth-notify-worker" --source test
 }
 
+cmd_update() {
+  need_root
+  install_scripts
+  log "update complete"
+}
+
+cmd_reinstall() {
+  parse_common_config_args "$@"
+  if [[ -n "${INSTALL_BACKENDS}" ]]; then
+    validate_backend_config "${INSTALL_BACKENDS}" "${INSTALL_TG_TOKEN}" "${INSTALL_TG_CHAT_ID}" "${INSTALL_BARK_URL}"
+  fi
+  need_root
+  check_dependencies
+  remove_pam_block
+  remove_sshd_use_pam_block
+  install_scripts
+  ensure_install_config
+  install_sshd_use_pam
+  install_pam_block
+  reload_sshd
+  log "reinstall complete"
+  log "kept config: ${CONFIG_FILE}"
+}
+
 cmd_install() {
   parse_common_config_args "$@"
   if [[ -n "${INSTALL_BACKENDS}" ]]; then
@@ -583,6 +607,13 @@ cmd_uninstall() {
 cmd_status() {
   log "install dir: ${INSTALL_DIR} $([[ -d "${INSTALL_DIR}" ]] && echo present || echo missing)"
   log "config: ${CONFIG_FILE} $([[ -f "${CONFIG_FILE}" ]] && echo present || echo missing)"
+  log "wrapper: ${SCRIPT_DIR}/ssh-auth-notify-wrapper $([[ -x "${SCRIPT_DIR}/ssh-auth-notify-wrapper" ]] && echo present || echo missing)"
+  log "worker: ${SCRIPT_DIR}/ssh-auth-notify-worker $([[ -x "${SCRIPT_DIR}/ssh-auth-notify-worker" ]] && echo present || echo missing)"
+  log "sender: ${SCRIPT_DIR}/ssh-auth-notify-send $([[ -x "${SCRIPT_DIR}/ssh-auth-notify-send" ]] && echo present || echo missing)"
+  local channel_file
+  for channel_file in "${CHANNEL_FILES[@]}"; do
+    log "channel: ${SCRIPT_DIR}/channels/${channel_file} $([[ -r "${SCRIPT_DIR}/channels/${channel_file}" ]] && echo present || echo missing)"
+  done
   if pam_has_block; then
     log "PAM block: present"
   else
@@ -607,6 +638,8 @@ usage() {
   cat <<USAGE
 Usage:
   $0 install [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS]
+  $0 update
+  $0 reinstall [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--timeout SECONDS]
   $0 configure
   $0 test [--backends telegram,bark] [--telegram-bot-token TOKEN] [--telegram-chat-id ID] [--bark-url URL] [--user USER] [--rhost IP] [--tty TTY]
   $0 status
@@ -620,6 +653,8 @@ main() {
   shift || true
   case "${cmd}" in
     install) cmd_install "$@" ;;
+    update) cmd_update "$@" ;;
+    reinstall) cmd_reinstall "$@" ;;
     configure) configure_interactive "$@" ;;
     test) cmd_test "$@" ;;
     status) cmd_status "$@" ;;
