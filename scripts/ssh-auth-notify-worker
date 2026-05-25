@@ -43,6 +43,40 @@ should_notify_user() {
   return 0
 }
 
+human_pam_type() {
+  case "${1:-}" in
+    account) printf "Account session" ;;
+    open_session) printf "Session opened" ;;
+    close_session) printf "Session closed" ;;
+    auth) printf "Authentication" ;;
+    *) printf "%s" "${1:-Unknown}" ;;
+  esac
+}
+
+human_source() {
+  case "${1:-}" in
+    pam) printf "PAM hook" ;;
+    test) printf "Test mode" ;;
+    *) printf "%s" "${1:-Unknown}" ;;
+  esac
+}
+
+format_body() {
+  local user="${1:-unknown}" rhost="${2:-unknown}" service="${3:-unknown}" tty="${4:-unknown}" pam_type="${5:-unknown}" shown_host="${6:-unknown}" now="${7:-unknown}" source_arg="${8:-unknown}"
+  cat <<BODY
+✅ New SSH login detected
+
+👤 User        : ${user}
+🌐 Remote IP   : ${rhost}
+🖥️ Host        : ${shown_host}
+🔧 Service     : ${service}
+💻 Terminal    : ${tty}
+📌 Event       : $(human_pam_type "${pam_type}")
+🕒 Time        : ${now}
+🚀 Trigger     : $(human_source "${source_arg}")
+BODY
+}
+
 main() {
   load_config
 
@@ -66,14 +100,8 @@ main() {
     exit 0
   fi
 
-  title="SSH login on ${shown_host}"
-  body="user=${user}
-rhost=${rhost}
-service=${service}
-tty=${tty}
-pam_type=${pam_type}
-time=${now}
-source=${source_arg}"
+  title="🔐 SSH Login · ${shown_host}"
+  body="$(format_body "${user}" "${rhost}" "${service}" "${tty}" "${pam_type}" "${shown_host}" "${now}" "${source_arg}")"
 
   if [[ -x "${SENDER}" ]]; then
     "${SENDER}" --title "${title}" --body "${body}" || log_debug "send failed"
