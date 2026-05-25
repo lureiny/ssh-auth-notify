@@ -141,6 +141,7 @@ scripts/channels/bark.sh
 ```
 
 sender 会通过 `channel_resolve` 得到这组函数，然后执行 validate 和 send。模块可以使用 helper：
+channel 可以自行选择使用哪种正文格式。worker 会同时传入普通列表正文（`--body`）和 HTML 正文（`--body-html`）；Telegram 使用 HTML 和 `<pre>` 代码块来保证字段对齐，Bark 使用更适合手机通知的 emoji 列表。
 
 ```bash
 require_vars VAR1 VAR2

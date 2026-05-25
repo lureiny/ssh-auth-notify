@@ -66,21 +66,45 @@ format_body() {
   cat <<BODY
 ✅ New SSH login detected
 
-User       : 👤 ${user}
-Remote IP  : 🌐 ${rhost}
-Host       : 🖥️ ${shown_host}
-Service    : 🔧 ${service}
-Terminal   : 💻 ${tty}
-Event      : 📌 $(human_pam_type "${pam_type}")
-Time       : 🕒 ${now}
-Trigger    : 🚀 $(human_source "${source_arg}")
+👤 User: ${user}
+🌐 Remote IP: ${rhost}
+🖥️ Host: ${shown_host}
+🔧 Service: ${service}
+💻 Terminal: ${tty}
+📌 Event: $(human_pam_type "${pam_type}")
+🕒 Time: ${now}
+🚀 Trigger: $(human_source "${source_arg}")
+BODY
+}
+
+html_escape_text() {
+  local text="${1:-}"
+  text="${text//&/&amp;}"
+  text="${text//</&lt;}"
+  text="${text//>/&gt;}"
+  printf "%s" "${text}"
+}
+
+format_body_html() {
+  local user="${1:-unknown}" rhost="${2:-unknown}" service="${3:-unknown}" tty="${4:-unknown}" pam_type="${5:-unknown}" shown_host="${6:-unknown}" now="${7:-unknown}" source_arg="${8:-unknown}"
+  cat <<BODY
+✅ New SSH login detected
+
+<pre>User      : $(html_escape_text "${user}")
+Remote IP : $(html_escape_text "${rhost}")
+Host      : $(html_escape_text "${shown_host}")
+Service   : $(html_escape_text "${service}")
+Terminal  : $(html_escape_text "${tty}")
+Event     : $(html_escape_text "$(human_pam_type "${pam_type}")")
+Time      : $(html_escape_text "${now}")
+Trigger   : $(html_escape_text "$(human_source "${source_arg}")")</pre>
 BODY
 }
 
 main() {
   load_config
 
-  local source_arg user rhost service tty pam_type host shown_host now title body
+  local source_arg user rhost service tty pam_type host shown_host now title body body_html
   source_arg="unknown"
   if [[ "${1:-}" == "--source" ]]; then
     source_arg="${2:-unknown}"
@@ -102,9 +126,10 @@ main() {
 
   title="🔐 SSH Login · ${shown_host}"
   body="$(format_body "${user}" "${rhost}" "${service}" "${tty}" "${pam_type}" "${shown_host}" "${now}" "${source_arg}")"
+  body_html="$(format_body_html "${user}" "${rhost}" "${service}" "${tty}" "${pam_type}" "${shown_host}" "${now}" "${source_arg}")"
 
   if [[ -x "${SENDER}" ]]; then
-    "${SENDER}" --title "${title}" --body "${body}" || log_debug "send failed"
+    "${SENDER}" --title "${title}" --body "${body}" --body-html "${body_html}" || log_debug "send failed"
   else
     log_debug "sender not executable: ${SENDER}"
   fi

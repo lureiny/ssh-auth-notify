@@ -143,6 +143,7 @@ A channel file `scripts/channels/<name>.sh` must implement:
 ```
 
 The sender resolves a channel into this function set, then calls validate and send. Channel modules can use these helpers from the sender:
+Channels can choose the message format they consume. The worker passes both a plain list body (`--body`) and an HTML body (`--body-html`); Telegram uses HTML with a `<pre>` block for aligned fields, while Bark uses the plain emoji list for mobile notifications.
 
 ```bash
 require_vars VAR1 VAR2

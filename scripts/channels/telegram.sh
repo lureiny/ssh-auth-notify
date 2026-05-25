@@ -7,13 +7,21 @@ telegram_validate() {
 }
 
 telegram_send() {
-  local title="${1:-}" body="${2:-}" timeout api
+  local title="${1:-}" body="${2:-}" timeout api text
   timeout="$(notify_timeout)"
   api="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
+  if [[ -n "${BODY_HTML:-}" ]]; then
+    text="$(html_escape "${title}")
+
+${BODY_HTML}"
+  else
+    text="$(html_escape "${title}")
+
+<pre>$(html_escape "${body}")</pre>"
+  fi
   curl -fsS --max-time "${timeout}" -X POST "${api}" \
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
-    --data-urlencode "text=${title}
-
-${body}" \
+    --data-urlencode "text=${text}" \
+    --data "parse_mode=HTML" \
     --data "disable_web_page_preview=true" >/dev/null
 }
