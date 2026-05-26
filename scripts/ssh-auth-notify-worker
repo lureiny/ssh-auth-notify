@@ -147,7 +147,7 @@ main() {
   host="$(hostname -f 2>/dev/null || hostname 2>/dev/null || printf unknown)"
   shown_host="${SSH_AUTH_NOTIFY_HOST_ALIAS:-${host}}"
   machine_addr="$(resolve_machine_addr)"
-  now="$(date -Is)"
+  now="$(date '+%Y-%m-%d %H:%M:%S')"
 
   if ! should_notify_user "${user}"; then
     log_debug "skip user=${user}"

@@ -42,7 +42,7 @@ PAM account
 🔧 Service: sshd
 💻 Terminal: ssh
 📌 Event: Account session
-🕒 Time: 2026-05-26T12:34:56+00:00
+🕒 Time: 2026-05-26 10:27:20
 🚀 Trigger: PAM hook
 ```
 
@@ -193,7 +193,6 @@ channel 可以自行选择使用哪种正文格式。worker 会同时传入普�
 ```bash
 require_vars VAR1 VAR2
 notify_timeout
-urlencode "text"
 log_debug "message"
 ```
 

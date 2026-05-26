@@ -42,7 +42,7 @@ Body:
 🔧 Service: sshd
 💻 Terminal: ssh
 📌 Event: Account session
-🕒 Time: 2026-05-26T12:34:56+00:00
+🕒 Time: 2026-05-26 10:27:20
 🚀 Trigger: PAM hook
 ```
 
@@ -195,7 +195,6 @@ Channels can choose the message format they consume. The worker passes both a pl
 ```bash
 require_vars VAR1 VAR2
 notify_timeout
-urlencode "text"
 log_debug "message"
 ```
 

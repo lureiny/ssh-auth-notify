@@ -41,10 +41,6 @@ html_escape() {
   printf "%s" "${text}"
 }
 
-urlencode() {
-  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
-}
-
 require_vars() {
   local var
   for var in "$@"; do

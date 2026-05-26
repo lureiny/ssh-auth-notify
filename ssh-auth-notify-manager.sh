@@ -78,15 +78,15 @@ find_pam_exec() {
 
 pkg_install_command() {
   if have_cmd apt-get; then
-    printf 'apt-get update && apt-get install -y systemd curl python3 libpam-modules'
+    printf 'apt-get update && apt-get install -y systemd curl jq libpam-modules'
   elif have_cmd dnf; then
-    printf 'dnf install -y systemd curl python3 pam'
+    printf 'dnf install -y systemd curl jq pam'
   elif have_cmd yum; then
-    printf 'yum install -y systemd curl python3 pam'
+    printf 'yum install -y systemd curl jq pam'
   elif have_cmd pacman; then
-    printf 'pacman -Sy --needed systemd curl python pam'
+    printf 'pacman -Sy --needed systemd curl jq pam'
   elif have_cmd zypper; then
-    printf 'zypper install -y systemd curl python3 pam'
+    printf 'zypper install -y systemd curl jq pam'
   else
     return 1
   fi
@@ -108,7 +108,7 @@ install_missing_deps() {
 
 check_dependencies() {
   local missing=() still_missing=() cmd
-  for cmd in bash systemd-run curl python3 install grep sed awk; do
+  for cmd in bash systemd-run curl jq install grep sed awk; do
     have_cmd "${cmd}" || missing+=("${cmd}")
   done
   find_pam_exec || missing+=("pam_exec.so")
@@ -118,7 +118,7 @@ check_dependencies() {
     install_missing_deps "${missing[@]}"
   fi
 
-  for cmd in bash systemd-run curl python3 install grep sed awk; do
+  for cmd in bash systemd-run curl jq install grep sed awk; do
     have_cmd "${cmd}" || still_missing+=("${cmd}")
   done
   find_pam_exec || still_missing+=("pam_exec.so")
@@ -127,7 +127,7 @@ check_dependencies() {
 
 check_test_dependencies() {
   local missing=() cmd
-  for cmd in bash curl python3 install; do
+  for cmd in bash curl jq install; do
     have_cmd "${cmd}" || missing+=("${cmd}")
   done
   ((${#missing[@]} == 0)) || fatal "missing test dependencies: ${missing[*]}"

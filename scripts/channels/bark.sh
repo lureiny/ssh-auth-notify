@@ -7,10 +7,11 @@ bark_validate() {
 }
 
 bark_send() {
-  local title="${1:-}" body="${2:-}" timeout url title_enc body_enc
+  local title="${1:-}" body="${2:-}" timeout payload
   timeout="$(notify_timeout)"
-  title_enc="$(urlencode "${title}")"
-  body_enc="$(urlencode "${body}")"
-  url="${BARK_URL%/}/${title_enc}/${body_enc}"
-  curl -fsS --max-time "${timeout}" "${url}" >/dev/null
+  payload="$(jq -cn --arg title "${title}" --arg body "${body}" '{title: $title, body: $body}')"
+  curl -fsS --max-time "${timeout}" \
+    -H 'Content-Type: application/json; charset=utf-8' \
+    -X POST "${BARK_URL%/}" \
+    --data-binary "${payload}" >/dev/null
 }
