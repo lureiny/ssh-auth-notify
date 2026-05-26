@@ -14,6 +14,40 @@ PAM account
   -> channel modules
 ```
 
+## Why This Project
+
+- Low login impact: PAM only runs a small wrapper, then `systemd-run` starts the notification worker asynchronously. Slow network calls or channel APIs do not block the SSH login path.
+- Multiple notification channels: Telegram and Bark are built in, and channels can be combined with `SSH_AUTH_NOTIFY_BACKENDS=telegram,bark`.
+- One-command install and update: the manager installs scripts, channel modules, PAM integration, and the `UsePAM yes` sshd drop-in.
+- Safe reconfiguration: `configure` uses an interactive menu loop, so you can update channels, node name, or machine address one item at a time.
+- Clear host identity: set a display node name for the notification title, and optionally include the machine's external IPv4 or fixed domain/IP in the message body.
+- User filtering: notify only selected users or skip selected users with comma-separated config fields.
+
+## Notification Example
+
+Title:
+
+```text
+🔐 SSH Login · prod-api-01
+```
+
+Body:
+
+```text
+✅ New SSH login detected
+
+👤 User: root
+🌐 Remote IP: 203.0.113.25
+🖥️ Host: ssh.example.com
+🔧 Service: sshd
+💻 Terminal: ssh
+📌 Event: Account session
+🕒 Time: 2026-05-26T12:34:56+00:00
+🚀 Trigger: PAM hook
+```
+
+The title host comes from `--node-name` or the local hostname. The body `Host` line appears only when machine address display is enabled; it uses `--machine-address ADDR_OR_HOST` or fetches the external IPv4 from `ifconfig.me` when enabled without a fixed value.
+
 ## Safety Notice
 
 Installation modifies `/etc/pam.d/sshd` and creates `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf` with `UsePAM yes`. It does not rewrite an existing `/etc/ssh/sshd_config`. Keep an existing root session open before installing, and do not close your current SSH session until a new login has been verified. PAM is backed up before modification.
@@ -26,7 +60,7 @@ Run directly from the GitHub raw URL. No clone is required.
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-If no complete config exists, install opens a channel checklist when `whiptail` or `dialog` is available, then asks for the required credentials. On minimal systems it falls back to a numbered text prompt. Existing complete config is preserved. Pass `--node-name NAME` during install or reinstall to set the display name used in notifications; when omitted, the worker falls back to the machine hostname. Machine address display is disabled by default; enable it with `--send-machine-address`, disable it with `--no-send-machine-address`, or pass `--machine-address ADDR_OR_HOST` to enable it with a fixed IPv4/domain. If enabled without a fixed value, the worker fetches the external IPv4 from `ifconfig.me`. Reconfigure from an interactive menu. After changing one item, the menu is shown again so you can continue editing channels, node name, or machine address options:
+If no complete config exists, install opens a channel checklist when `whiptail` or `dialog` is available, then asks for the required credentials and an optional node name. On minimal systems it falls back to a numbered text prompt. Existing complete config is preserved. Pass `--node-name NAME` during install or reinstall to set the display name used in notifications; when omitted, the worker falls back to the machine hostname. Machine address display is disabled by default; enable it with `--send-machine-address`, disable it with `--no-send-machine-address`, or pass `--machine-address ADDR_OR_HOST` to enable it with a fixed IPv4/domain. If enabled without a fixed value, the worker fetches the external IPv4 from `ifconfig.me`. Reconfigure from an interactive menu. After changing one item, the menu is shown again so you can continue editing channels, node name, or machine address options:
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure

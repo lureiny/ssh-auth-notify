@@ -14,6 +14,40 @@ PAM account
   -> channel modules
 ```
 
+## 项目优势
+
+- 登录路径开销低：PAM 只执行极短 wrapper，再通过 `systemd-run` 异步启动通知 worker。网络请求或 channel API 变慢不会阻塞 SSH 登录流程。
+- 支持多 channel：内置 Telegram 和 Bark，可以用 `SSH_AUTH_NOTIFY_BACKENDS=telegram,bark` 同时发送。
+- 一条命令安装和更新：manager 会安装脚本、channel 模块、PAM 接入点，以及设置 `UsePAM yes` 的 sshd drop-in。
+- 配置安全清晰：`configure` 是交互菜单循环，可以逐项修改 channel、节点名称、机器地址，改完一项后继续选择。
+- 主机身份更清楚：通知标题可设置节点名称，正文可按需展示机器外部 IPv4 或固定域名/IP。
+- 支持用户过滤：可以只通知指定用户，也可以跳过指定用户，配置项使用逗号分隔。
+
+## 通知示例
+
+标题：
+
+```text
+🔐 SSH Login · prod-api-01
+```
+
+正文：
+
+```text
+✅ New SSH login detected
+
+👤 User: root
+🌐 Remote IP: 203.0.113.25
+🖥️ Host: ssh.example.com
+🔧 Service: sshd
+💻 Terminal: ssh
+📌 Event: Account session
+🕒 Time: 2026-05-26T12:34:56+00:00
+🚀 Trigger: PAM hook
+```
+
+标题里的主机来自 `--node-name` 或本机 hostname。正文里的 `Host` 只在开启机器地址展示时出现；它使用 `--machine-address ADDR_OR_HOST` 指定的值，或在开启但未指定固定值时从 `ifconfig.me` 获取外部 IPv4。
+
 ## 风险提示
 
 安装会修改 `/etc/pam.d/sshd`，并新增 `/etc/ssh/sshd_config.d/99-ssh-auth-notify.conf` 来设置 `UsePAM yes`。它不会改写已有 `/etc/ssh/sshd_config`。请先保持一个已有 root session，不要在验证前关闭当前 SSH 会话。安装脚本会自动备份 PAM 文件，但错误 SSH/PAM 配置仍可能影响后续 SSH 登录。
@@ -26,7 +60,7 @@ PAM account
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- install
 ```
 
-如果已有配置不存在或不完整，安装过程会优先使用 `whiptail` 或 `dialog` 显示 channel checklist，然后询问对应凭据；极简系统会回退到编号文本选择。已有完整配置会保留。安装或重新安装时可以传入 `--node-name NAME` 设置通知里展示的节点名称；未指定时 worker 会回落到机器 hostname。机器地址默认不展示；用 `--send-machine-address` 开启，用 `--no-send-machine-address` 关闭，或用 `--machine-address ADDR_OR_HOST` 指定固定 IPv4/域名并自动开启。开启后如果没有固定值，worker 会从 `ifconfig.me` 获取外部 IPv4。通过交互菜单重新配置。每次修改一项后会回到菜单，可以继续修改 channel、节点名称或机器地址选项：
+如果已有配置不存在或不完整，安装过程会优先使用 `whiptail` 或 `dialog` 显示 channel checklist，然后询问对应凭据和可选节点名称；极简系统会回退到编号文本选择。已有完整配置会保留。安装或重新安装时可以传入 `--node-name NAME` 设置通知里展示的节点名称；未指定时 worker 会回落到机器 hostname。机器地址默认不展示；用 `--send-machine-address` 开启，用 `--no-send-machine-address` 关闭，或用 `--machine-address ADDR_OR_HOST` 指定固定 IPv4/域名并自动开启。开启后如果没有固定值，worker 会从 `ifconfig.me` 获取外部 IPv4。通过交互菜单重新配置。每次修改一项后会回到菜单，可以继续修改 channel、节点名称或机器地址选项：
 
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/lureiny/ssh-auth-notify/main/ssh-auth-notify-manager.sh)" -- configure

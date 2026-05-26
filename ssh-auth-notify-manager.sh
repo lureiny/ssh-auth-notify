@@ -359,7 +359,7 @@ ensure_install_config() {
     fatal "configuration is required; rerun with --backends telegram,bark and credentials, or run interactively"
   fi
 
-  configure_interactive
+  configure_initial_interactive
 }
 
 install_scripts() {
@@ -641,6 +641,31 @@ configure_channels_interactive() {
 
   CFG_BACKENDS="${backends}"
   save_configure_values
+}
+
+configure_initial_interactive() {
+  need_root
+  install -d -m 0700 "${CONFIG_DIR}"
+
+  local backends token chat_id bark_url node_name_answer
+  backends="$(prompt_backends_interactive)" || fatal "channel selection cancelled"
+
+  if backend_list_contains "${backends}" "telegram"; then
+    read -r -p "Telegram bot token: " token
+    read -r -p "Telegram chat id: " chat_id
+  fi
+  if backend_list_contains "${backends}" "bark"; then
+    read -r -p "Bark URL, e.g. https://api.day.app/KEY: " bark_url
+  fi
+
+  if [[ "${INSTALL_NODE_NAME_SET}" -eq 0 ]]; then
+    read -r -p "Node name [empty uses hostname]: " node_name_answer
+    INSTALL_NODE_NAME="${node_name_answer}"
+  fi
+
+  validate_backend_config "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}"
+  write_config_file "${backends}" "${token:-}" "${chat_id:-}" "${bark_url:-}" "5" "${INSTALL_NODE_NAME}" "${INSTALL_SEND_MACHINE_ADDR}" "${INSTALL_MACHINE_ADDR}"
+  log "updated config: ${CONFIG_FILE}"
 }
 
 configure_node_interactive() {
