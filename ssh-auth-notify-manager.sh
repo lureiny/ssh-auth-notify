@@ -76,25 +76,80 @@ find_pam_exec() {
   return 1
 }
 
+package_for_dep() {
+  local manager="${1:-}" dep="${2:-}"
+  case "${manager}:${dep}" in
+    apt-get:bash) printf 'bash' ;;
+    apt-get:systemd-run) printf 'systemd' ;;
+    apt-get:curl) printf 'curl' ;;
+    apt-get:jq) printf 'jq' ;;
+    apt-get:install) printf 'coreutils' ;;
+    apt-get:grep) printf 'grep' ;;
+    apt-get:sed) printf 'sed' ;;
+    apt-get:awk) printf 'gawk' ;;
+    apt-get:pam_exec.so) printf 'libpam-modules' ;;
+
+    dnf:bash|yum:bash|zypper:bash) printf 'bash' ;;
+    dnf:systemd-run|yum:systemd-run|zypper:systemd-run) printf 'systemd' ;;
+    dnf:curl|yum:curl|zypper:curl) printf 'curl' ;;
+    dnf:jq|yum:jq|zypper:jq) printf 'jq' ;;
+    dnf:install|yum:install|zypper:install) printf 'coreutils' ;;
+    dnf:grep|yum:grep|zypper:grep) printf 'grep' ;;
+    dnf:sed|yum:sed|zypper:sed) printf 'sed' ;;
+    dnf:awk|yum:awk|zypper:awk) printf 'gawk' ;;
+    dnf:pam_exec.so|yum:pam_exec.so|zypper:pam_exec.so) printf 'pam' ;;
+
+    pacman:bash) printf 'bash' ;;
+    pacman:systemd-run) printf 'systemd' ;;
+    pacman:curl) printf 'curl' ;;
+    pacman:jq) printf 'jq' ;;
+    pacman:install) printf 'coreutils' ;;
+    pacman:grep) printf 'grep' ;;
+    pacman:sed) printf 'sed' ;;
+    pacman:awk) printf 'gawk' ;;
+    pacman:pam_exec.so) printf 'pam' ;;
+    *) return 1 ;;
+  esac
+}
+
 pkg_install_command() {
+  local manager="" dep pkg packages=() seen=" "
   if have_cmd apt-get; then
-    printf 'apt-get update && apt-get install -y systemd curl jq libpam-modules'
+    manager="apt-get"
   elif have_cmd dnf; then
-    printf 'dnf install -y systemd curl jq pam'
+    manager="dnf"
   elif have_cmd yum; then
-    printf 'yum install -y systemd curl jq pam'
+    manager="yum"
   elif have_cmd pacman; then
-    printf 'pacman -Sy --needed systemd curl jq pam'
+    manager="pacman"
   elif have_cmd zypper; then
-    printf 'zypper install -y systemd curl jq pam'
+    manager="zypper"
   else
     return 1
   fi
+
+  for dep in "$@"; do
+    pkg="$(package_for_dep "${manager}" "${dep}")" || return 1
+    if [[ "${seen}" != *" ${pkg} "* ]]; then
+      packages+=("${pkg}")
+      seen="${seen}${pkg} "
+    fi
+  done
+  ((${#packages[@]} > 0)) || return 1
+
+  case "${manager}" in
+    apt-get) printf 'apt-get update && apt-get install -y %s' "${packages[*]}" ;;
+    dnf) printf 'dnf install -y %s' "${packages[*]}" ;;
+    yum) printf 'yum install -y %s' "${packages[*]}" ;;
+    pacman) printf 'pacman -Sy --needed %s' "${packages[*]}" ;;
+    zypper) printf 'zypper install -y %s' "${packages[*]}" ;;
+    *) return 1 ;;
+  esac
 }
 
 install_missing_deps() {
   local missing=("$@") cmd
-  if cmd="$(pkg_install_command)"; then
+  if cmd="$(pkg_install_command "${missing[@]}")"; then
     log "suggested install command: ${cmd}"
     if confirm "Install missing dependencies now?"; then
       bash -c "${cmd}"
