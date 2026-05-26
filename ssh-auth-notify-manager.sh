@@ -82,7 +82,7 @@ package_for_dep() {
     apt-get:bash) printf 'bash' ;;
     apt-get:systemd-run) printf 'systemd' ;;
     apt-get:curl) printf 'curl' ;;
-    apt-get:jq) printf 'jq' ;;
+    apt-get:jq|apt-get:json-tool) printf 'jq' ;;
     apt-get:install) printf 'coreutils' ;;
     apt-get:grep) printf 'grep' ;;
     apt-get:sed) printf 'sed' ;;
@@ -92,7 +92,7 @@ package_for_dep() {
     dnf:bash|yum:bash|zypper:bash) printf 'bash' ;;
     dnf:systemd-run|yum:systemd-run|zypper:systemd-run) printf 'systemd' ;;
     dnf:curl|yum:curl|zypper:curl) printf 'curl' ;;
-    dnf:jq|yum:jq|zypper:jq) printf 'jq' ;;
+    dnf:jq|yum:jq|zypper:jq|dnf:json-tool|yum:json-tool|zypper:json-tool) printf 'jq' ;;
     dnf:install|yum:install|zypper:install) printf 'coreutils' ;;
     dnf:grep|yum:grep|zypper:grep) printf 'grep' ;;
     dnf:sed|yum:sed|zypper:sed) printf 'sed' ;;
@@ -102,7 +102,7 @@ package_for_dep() {
     pacman:bash) printf 'bash' ;;
     pacman:systemd-run) printf 'systemd' ;;
     pacman:curl) printf 'curl' ;;
-    pacman:jq) printf 'jq' ;;
+    pacman:jq|pacman:json-tool) printf 'jq' ;;
     pacman:install) printf 'coreutils' ;;
     pacman:grep) printf 'grep' ;;
     pacman:sed) printf 'sed' ;;
@@ -161,11 +161,16 @@ install_missing_deps() {
   fi
 }
 
+json_tool_available() {
+  have_cmd jq || have_cmd python3
+}
+
 check_dependencies() {
   local missing=() still_missing=() cmd
-  for cmd in bash systemd-run curl jq install grep sed awk; do
+  for cmd in bash systemd-run curl install grep sed awk; do
     have_cmd "${cmd}" || missing+=("${cmd}")
   done
+  json_tool_available || missing+=("json-tool")
   find_pam_exec || missing+=("pam_exec.so")
 
   if ((${#missing[@]} > 0)); then
@@ -173,18 +178,20 @@ check_dependencies() {
     install_missing_deps "${missing[@]}"
   fi
 
-  for cmd in bash systemd-run curl jq install grep sed awk; do
+  for cmd in bash systemd-run curl install grep sed awk; do
     have_cmd "${cmd}" || still_missing+=("${cmd}")
   done
+  json_tool_available || still_missing+=("json-tool")
   find_pam_exec || still_missing+=("pam_exec.so")
   ((${#still_missing[@]} == 0)) || fatal "dependencies still missing: ${still_missing[*]}"
 }
 
 check_test_dependencies() {
   local missing=() cmd
-  for cmd in bash curl jq install; do
+  for cmd in bash curl install; do
     have_cmd "${cmd}" || missing+=("${cmd}")
   done
+  json_tool_available || missing+=("json-tool")
   ((${#missing[@]} == 0)) || fatal "missing test dependencies: ${missing[*]}"
 }
 

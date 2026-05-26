@@ -41,6 +41,18 @@ html_escape() {
   printf "%s" "${text}"
 }
 
+json_payload() {
+  local title="${1:-}" body="${2:-}"
+  if command -v jq >/dev/null 2>&1; then
+    jq -cn --arg title "${title}" --arg body "${body}" '{title: $title, body: $body}'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json, sys; print(json.dumps({"title": sys.argv[1], "body": sys.argv[2]}, ensure_ascii=False))' "${title}" "${body}"
+  else
+    printf '[ssh-auth-notify-send] missing json tool: install jq or python3\n' >&2
+    return 1
+  fi
+}
+
 require_vars() {
   local var
   for var in "$@"; do
